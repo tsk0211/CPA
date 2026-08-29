@@ -9,6 +9,7 @@ import '../api/api_exception.dart';
 import '../models/project.dart';
 import '../state/app_scope.dart';
 import '../widgets/project_multi_select_sheet.dart';
+import '../widgets/responsive_center.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -104,7 +105,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Reports")),
-      body: ListView(
+      body: ResponsiveCenter(
+        child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text("Date range", style: Theme.of(context).textTheme.titleSmall),
@@ -162,6 +164,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             label: const Text("Export"),
           ),
         ],
+        ),
       ),
     );
   }

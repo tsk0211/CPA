@@ -13,8 +13,12 @@ import 'api_exception.dart';
 /// they just call get/post/patch/delete and get JSON back (or an
 /// ApiException/NetworkUnavailableException).
 class ApiClient {
-  final _storage = const FlutterSecureStorage();
-  final _http = http.Client();
+  final FlutterSecureStorage _storage;
+  final http.Client _http;
+
+  ApiClient({FlutterSecureStorage? storage, http.Client? httpClient})
+      : _storage = storage ?? const FlutterSecureStorage(),
+        _http = httpClient ?? http.Client();
 
   String? _accessToken;
   String? _refreshToken;

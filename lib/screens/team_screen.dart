@@ -8,6 +8,8 @@ import '../models/user.dart';
 import '../state/app_scope.dart';
 import '../widgets/add_user_sheet.dart';
 import '../widgets/audit_entry_tile.dart';
+import '../widgets/responsive_center.dart';
+import '../widgets/role_badge.dart';
 
 class TeamScreen extends StatefulWidget {
   const TeamScreen({super.key});
@@ -26,11 +28,16 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
       _tabController ??= TabController(length: 2, vsync: this);
       return Scaffold(
         appBar: AppBar(title: const Text("Team"), bottom: TabBar(controller: _tabController, tabs: const [Tab(text: "Users"), Tab(text: "Activity")])),
-        body: TabBarView(controller: _tabController, children: const [_UsersTab(), _GlobalActivityTab()]),
+        body: ResponsiveCenter(
+          child: TabBarView(controller: _tabController, children: const [_UsersTab(), _GlobalActivityTab()]),
+        ),
       );
     }
     // Analyst: Team screen exists but only the Activity segment is usable.
-    return Scaffold(appBar: AppBar(title: const Text("Team")), body: const _GlobalActivityTab());
+    return Scaffold(
+      appBar: AppBar(title: const Text("Team")),
+      body: const ResponsiveCenter(child: _GlobalActivityTab()),
+    );
   }
 
   @override
@@ -52,11 +59,17 @@ class _UsersTabState extends State<_UsersTab> {
   Timer? _debounce;
   List<TeamMember> _items = [];
   bool _loading = true;
+  bool _bootstrapped = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load("");
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppScope.of(context) isn't valid in initState — didChangeDependencies
+    // is the correct hook, guarded to fire only once.
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _load("");
+    }
   }
 
   @override
@@ -163,9 +176,9 @@ class _UsersTabState extends State<_UsersTab> {
                     final member = _items[index];
                     return ListTile(
                       leading: CircleAvatar(child: Text(member.name.isNotEmpty ? member.name[0].toUpperCase() : "?")),
-                      title: Text(member.name),
-                      subtitle: Text(member.email),
-                      trailing: Chip(label: Text(member.role.label)),
+                      title: Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(member.email, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: RoleBadge(role: member.role),
                       onTap: () => _showUserActions(member),
                     );
                   },
@@ -188,11 +201,17 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
   int _page = 1;
   bool _hasMore = true;
   bool _loading = true;
+  bool _bootstrapped = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppScope.of(context) isn't valid in initState — didChangeDependencies
+    // is the correct hook, guarded to fire only once.
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {

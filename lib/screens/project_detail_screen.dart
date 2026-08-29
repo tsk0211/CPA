@@ -10,6 +10,7 @@ import '../state/app_scope.dart';
 import '../widgets/add_edit_project_sheet.dart';
 import '../widgets/add_edit_purchase_sheet.dart';
 import '../widgets/audit_entry_tile.dart';
+import '../widgets/responsive_center.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
@@ -24,11 +25,16 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
   TabController? _tabController;
 
   @override
-  void initState() {
-    super.initState();
-    final scope = AppScope.of(context);
-    final showActivityTab = scope.session.user!.role.canSeeActivityLog;
-    _tabController = showActivityTab ? TabController(length: 2, vsync: this) : null;
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppScope.of(context) isn't valid in initState (it's an InheritedWidget
+    // lookup) — didChangeDependencies is the correct hook, guarded so the
+    // controller is only created once.
+    if (_tabController == null) {
+      final scope = AppScope.of(context);
+      final showActivityTab = scope.session.user!.role.canSeeActivityLog;
+      if (showActivityTab) _tabController = TabController(length: 2, vsync: this);
+    }
   }
 
   @override
@@ -58,9 +64,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_project.icon),
+              Hero(tag: 'project-icon-${_project.id}', child: Text(_project.icon)),
               const SizedBox(width: 8),
-              Flexible(child: Text(_project.name, overflow: TextOverflow.ellipsis)),
+              Flexible(child: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
               if (role.canManageProjects) const Icon(Icons.edit, size: 16),
             ],
           ),
@@ -69,31 +75,50 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
             ? TabBar(controller: _tabController, tabs: const [Tab(text: "Purchases"), Tab(text: "Activity")])
             : null,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Total spent"),
-                Text(currency.format(_project.totalSpent), style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-              ],
+      body: ResponsiveCenter(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("Total spent"),
+                  // Flexible + FittedBox: a large total (six figures isn't
+                  // unrealistic for a real project) shrinks to fit instead
+                  // of overflowing off the edge of narrow phones — this Row
+                  // has no other flex child to absorb the extra width.
+                  Flexible(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      child: FittedBox(
+                        key: ValueKey(_project.totalSpent),
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          currency.format(_project.totalSpent),
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: _tabController != null
-                ? TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _PurchasesTab(project: _project),
-                      _ActivityTab(projectId: _project.id),
-                    ],
-                  )
-                : _PurchasesTab(project: _project),
-          ),
-        ],
+            const Divider(height: 1),
+            Expanded(
+              child: _tabController != null
+                  ? TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _PurchasesTab(project: _project),
+                        _ActivityTab(projectId: _project.id),
+                      ],
+                    )
+                  : _PurchasesTab(project: _project),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: role.canAddPurchases
           ? FloatingActionButton.extended(
@@ -127,11 +152,20 @@ class _PurchasesTabState extends State<_PurchasesTab> {
   bool _hasMore = true;
   bool _loading = false;
   String _search = "";
+  bool _bootstrapped = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _loadFirstPage();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadFirstPage();
     _scrollController.addListener(() {
       if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) _loadNextPage();
     });
@@ -221,7 +255,7 @@ class _PurchasesTabState extends State<_PurchasesTab> {
                   final pending = pendingForProject[index];
                   return ListTile(
                     leading: const Icon(Icons.cloud_upload_outlined),
-                    title: Text(pending.description),
+                    title: Text(pending.description, maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: const Text("Pending sync"),
                     trailing: Text(currency.format(pending.amount)),
                   );
@@ -230,13 +264,17 @@ class _PurchasesTabState extends State<_PurchasesTab> {
                 if (itemIndex < _items.length) {
                   final purchase = _items[itemIndex];
                   final tile = ListTile(
-                    title: Text(purchase.description),
-                    subtitle: Text([
-                      if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
-                      if (purchase.vendor != null) purchase.vendor!,
-                      DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
-                      if (purchase.editedAt != null) "edited",
-                    ].join(" · ")),
+                    title: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(
+                      [
+                        if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
+                        if (purchase.vendor != null) purchase.vendor!,
+                        DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
+                        if (purchase.editedAt != null) "edited",
+                      ].join(" · "),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
                   );
                   if (!role.canEditPurchases) return tile;
@@ -283,11 +321,18 @@ class _ActivityTabState extends State<_ActivityTab> {
   final List<AuditEntry> _items = [];
   int _page = 1;
   bool _hasMore = true;
+  bool _bootstrapped = false;
 
   @override
-  void initState() {
-    super.initState();
-    _future = _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppScope.of(context) isn't valid in initState — didChangeDependencies
+    // always runs before the first build, so `_future` is still assigned in
+    // time for the FutureBuilder below.
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _future = _load();
+    }
   }
 
   Future<void> _load() async {

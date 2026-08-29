@@ -27,11 +27,17 @@ class _ProjectMultiSelectSheetState extends State<_ProjectMultiSelectSheet> {
   Timer? _debounce;
   List<Project> _items = [];
   bool _loading = true;
+  bool _bootstrapped = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load("");
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppScope.of(context) isn't valid in initState — didChangeDependencies
+    // is the correct hook, guarded to fire only once.
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _load("");
+    }
   }
 
   @override

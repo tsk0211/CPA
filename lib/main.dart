@@ -12,13 +12,18 @@ import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'state/app_scope.dart';
 import 'state/session.dart';
+import 'theme.dart';
 
 void main() {
   runApp(const CpaApp());
 }
 
 class CpaApp extends StatefulWidget {
-  const CpaApp({super.key});
+  /// Test-only hook: pass a pre-configured ApiClient (mock http.Client,
+  /// tokens seeded via debugSetTokens) to render authenticated screens
+  /// with real widgets and fake network data, without a live server.
+  final ApiClient? debugApiClient;
+  const CpaApp({super.key, this.debugApiClient});
 
   @override
   State<CpaApp> createState() => _CpaAppState();
@@ -36,7 +41,7 @@ class _CpaAppState extends State<CpaApp> {
   @override
   void initState() {
     super.initState();
-    _client = ApiClient();
+    _client = widget.debugApiClient ?? ApiClient();
     _session = Session(_client);
     _projects = ProjectsApi(_client);
     _purchases = PurchasesApi(_client);
@@ -73,20 +78,29 @@ class _CpaAppState extends State<CpaApp> {
       child: MaterialApp(
         title: "CPA",
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(colorSchemeSeed: const Color(0xFF2E7D32), useMaterial3: true),
+        theme: buildTheme(Brightness.light),
+        darkTheme: buildTheme(Brightness.dark),
+        themeMode: ThemeMode.system,
         home: AnimatedBuilder(
           animation: _session,
           builder: (context, _) {
+            final Widget child;
             switch (_session.status) {
               case SessionStatus.loading:
-                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                child = const Scaffold(body: Center(child: CircularProgressIndicator()));
               case SessionStatus.loggedOut:
-                return const LoginScreen();
+                child = const LoginScreen();
               case SessionStatus.mustChangePassword:
-                return const ChangePasswordScreen(forced: true);
+                child = const ChangePasswordScreen(forced: true);
               case SessionStatus.loggedIn:
-                return const HomeShell();
+                child = const HomeShell();
             }
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: KeyedSubtree(key: ValueKey(_session.status), child: child),
+            );
           },
         ),
       ),

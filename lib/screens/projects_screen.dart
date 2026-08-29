@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../models/project.dart';
 import '../state/app_scope.dart';
 import '../widgets/add_edit_project_sheet.dart';
+import '../widgets/responsive_center.dart';
 import 'activity_screen.dart';
 import 'profile_screen.dart';
 import 'project_detail_screen.dart';
@@ -28,11 +29,24 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   bool _loading = false;
   bool _searching = false;
   String _search = "";
+  bool _bootstrapped = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppScope.of(context) (an InheritedWidget lookup) isn't valid in
+    // initState — didChangeDependencies is the correct lifecycle hook for
+    // "load data that depends on inherited context," guarded so it only
+    // fires once rather than on every dependency change.
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _loadFirstPage();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadFirstPage();
     _scrollController.addListener(() {
       if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) {
         _loadNextPage();
@@ -186,56 +200,61 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          AnimatedBuilder(
-            animation: scope.offlineQueue,
-            builder: (context, _) {
-              if (!scope.offlineQueue.hasPending) return const SizedBox.shrink();
-              return MaterialBanner(
-                content: Text("${scope.offlineQueue.pending.length} purchase(s) waiting to sync"),
-                leading: const Icon(Icons.cloud_off),
-                actions: [
-                  TextButton(
-                    onPressed: () => scope.offlineQueue.sync(scope.purchases),
-                    child: const Text("Sync now"),
-                  ),
-                ],
-              );
-            },
-          ),
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadFirstPage,
-              child: ListView.builder(
-                controller: _scrollController,
-                itemCount: _items.length + 1 + (role.canManageProjects ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index < _items.length) {
-                    final project = _items[index];
+      body: ResponsiveCenter(
+        child: Column(
+          children: [
+            AnimatedBuilder(
+              animation: scope.offlineQueue,
+              builder: (context, _) {
+                if (!scope.offlineQueue.hasPending) return const SizedBox.shrink();
+                return MaterialBanner(
+                  content: Text("${scope.offlineQueue.pending.length} purchase(s) waiting to sync"),
+                  leading: const Icon(Icons.cloud_off),
+                  actions: [
+                    TextButton(
+                      onPressed: () => scope.offlineQueue.sync(scope.purchases),
+                      child: const Text("Sync now"),
+                    ),
+                  ],
+                );
+              },
+            ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _loadFirstPage,
+                child: ListView.builder(
+                  controller: _scrollController,
+                  itemCount: _items.length + 1 + (role.canManageProjects ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (index < _items.length) {
+                      final project = _items[index];
+                      return ListTile(
+                        leading: Hero(
+                          tag: 'project-icon-${project.id}',
+                          child: Text(project.icon, style: const TextStyle(fontSize: 24)),
+                        ),
+                        title: Text(project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(currency.format(project.totalSpent)),
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
+                        onLongPress: () => _showProjectMenu(project),
+                      );
+                    }
+                    if (index == _items.length) {
+                      if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+                      if (_items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("No projects yet.")));
+                      return const SizedBox.shrink();
+                    }
                     return ListTile(
-                      leading: Text(project.icon, style: const TextStyle(fontSize: 24)),
-                      title: Text(project.name),
-                      subtitle: Text(currency.format(project.totalSpent)),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
-                      onLongPress: () => _showProjectMenu(project),
+                      leading: const Icon(Icons.add),
+                      title: const Text("New project"),
+                      onTap: _addProject,
                     );
-                  }
-                  if (index == _items.length) {
-                    if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
-                    if (_items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("No projects yet.")));
-                    return const SizedBox.shrink();
-                  }
-                  return ListTile(
-                    leading: const Icon(Icons.add),
-                    title: const Text("New project"),
-                    onTap: _addProject,
-                  );
-                },
+                  },
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

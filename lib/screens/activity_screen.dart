@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../widgets/responsive_center.dart';
 
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
@@ -17,11 +18,23 @@ class _ActivityScreenState extends State<ActivityScreen> {
   int _page = 1;
   bool _hasMore = true;
   bool _loading = false;
+  bool _bootstrapped = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AppScope.of(context) isn't valid in initState (it's an InheritedWidget
+    // lookup) — didChangeDependencies is the correct hook, guarded to fire
+    // only once.
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _loadFirstPage();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadFirstPage();
     _scrollController.addListener(() {
       if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) _loadNextPage();
     });
@@ -69,30 +82,36 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text("Activity")),
-      body: RefreshIndicator(
-        onRefresh: _loadFirstPage,
-        child: ListView.builder(
-          controller: _scrollController,
-          itemCount: _items.length + 1,
-          itemBuilder: (context, index) {
-            if (index < _items.length) {
-              final purchase = _items[index];
-              return ListTile(
-                leading: Text(purchase.projectIcon ?? "📁", style: const TextStyle(fontSize: 22)),
-                title: Text(purchase.description),
-                subtitle: Text([
-                  purchase.projectName ?? '',
-                  if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
-                  purchase.createdByName ?? '',
-                  DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
-                ].join(" · ")),
-                trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
-              );
-            }
-            if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
-            if (_items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("Nothing logged yet.")));
-            return const SizedBox.shrink();
-          },
+      body: ResponsiveCenter(
+        child: RefreshIndicator(
+          onRefresh: _loadFirstPage,
+          child: ListView.builder(
+            controller: _scrollController,
+            itemCount: _items.length + 1,
+            itemBuilder: (context, index) {
+              if (index < _items.length) {
+                final purchase = _items[index];
+                return ListTile(
+                  leading: Text(purchase.projectIcon ?? "📁", style: const TextStyle(fontSize: 22)),
+                  title: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    [
+                      purchase.projectName ?? '',
+                      if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
+                      purchase.createdByName ?? '',
+                      DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
+                    ].join(" · "),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
+                );
+              }
+              if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+              if (_items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("Nothing logged yet.")));
+              return const SizedBox.shrink();
+            },
+          ),
         ),
       ),
     );
