@@ -4,6 +4,7 @@ import { logActivity } from "../audit.js";
 import { securityConfig } from "../config/index.js";
 import { requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
 import { User, type Role } from "../models/User.js";
+import { revokeAllRefreshTokensForUser } from "../tokens.js";
 
 export const usersRouter = Router();
 
@@ -107,6 +108,7 @@ usersRouter.delete("/:id", async (req: AuthedRequest, res) => {
   target.deletedAt = new Date();
   target.deletedBy = req.user!.id;
   await target.save();
+  await revokeAllRefreshTokensForUser(target._id);
 
   await logActivity(req, {
     action: "user.deactivate",

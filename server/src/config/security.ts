@@ -16,8 +16,18 @@ export const securityConfig = {
     return secret;
   },
 
-  // How long a login session stays valid before the app must log in again.
-  jwtExpiresIn: optionalEnv("JWT_EXPIRES_IN", "30d"),
+  // Access tokens are short-lived JWTs — if one leaks, the exposure window
+  // is small. Long sessions come from the refresh token, not this.
+  accessTokenExpiresIn: optionalEnv("ACCESS_TOKEN_EXPIRES_IN", "15m"),
+
+  // Refresh tokens are opaque random strings (not JWTs), stored server-side
+  // as a hash only, so they can be individually revoked (e.g. the moment an
+  // account is deactivated) rather than just expiring on their own.
+  // "Remember me" at login picks which TTL applies.
+  refreshTokenTtlDays: {
+    rememberMe: optionalNumber("REFRESH_TOKEN_TTL_REMEMBER_ME_DAYS", 30),
+    default: optionalNumber("REFRESH_TOKEN_TTL_DEFAULT_DAYS", 1),
+  },
 
   // bcrypt cost factor. 12 is a reasonable modern default (10 is the
   // library default but considered light in 2026); each +1 roughly doubles

@@ -1,33 +1,31 @@
 import type { NextFunction, Request, Response } from "express";
-import jwt from "jsonwebtoken";
-import { securityConfig } from "../config/index.js";
+import { verifyAccessToken } from "../tokens.js";
 import { User, type Role } from "../models/User.js";
 
 export interface AuthedRequest extends Request {
   user?: { id: string; role: Role; name: string; mustChangePassword: boolean };
 }
 
-export function signToken(userId: string): string {
-  return jwt.sign({ id: userId }, securityConfig.jwtSecret, { expiresIn: securityConfig.jwtExpiresIn as jwt.SignOptions["expiresIn"] });
-}
-
 // Looks the user up fresh on every request (rather than trusting the JWT's
 // stale claims) so a deactivation or role change takes effect immediately,
-// not after a 30-day-old token expires.
+// not after the access token's short expiry.
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : null;
   if (!token) return res.status(401).json({ error: "missing bearer token" });
 
   try {
-    const decoded = jwt.verify(token, securityConfig.jwtSecret) as { id: string };
+    const decoded = verifyAccessToken(token);
     const user = await User.findById(decoded.id);
     if (!user || user.deletedAt) return res.status(401).json({ error: "account not found or deactivated" });
 
     req.user = { id: user._id, role: user.role, name: user.name, mustChangePassword: user.mustChangePassword };
     next();
   } catch {
-    res.status(401).json({ error: "invalid or expired token" });
+    // Covers both a malformed token and an expired one — the client's
+    // response to either is the same: try /auth/refresh, then fall back to
+    // login if that also fails.
+    res.status(401).json({ error: "invalid or expired access token" });
   }
 }
 

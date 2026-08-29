@@ -35,8 +35,12 @@ services:
         value: "12"
       - key: MIN_PASSWORD_LENGTH
         value: "8"
-      - key: JWT_EXPIRES_IN
-        value: 30d
+      - key: ACCESS_TOKEN_EXPIRES_IN
+        value: 15m
+      - key: REFRESH_TOKEN_TTL_REMEMBER_ME_DAYS
+        value: "30"
+      - key: REFRESH_TOKEN_TTL_DEFAULT_DAYS
+        value: "1"
       - key: CORS_ORIGIN
         value: "*"
       - key: LOGIN_RATE_LIMIT_WINDOW_MS

@@ -47,8 +47,11 @@ async function main() {
     method: "POST",
     body: JSON.stringify({ email: "owner@cpa.test", password: "owner-temp-pw" }),
   });
-  assert(ownerLogin.status === 200 && ownerLogin.body.user.mustChangePassword === true, "owner login returns mustChangePassword=true");
-  const ownerToken = ownerLogin.body.token;
+  assert(
+    ownerLogin.status === 200 && ownerLogin.body.user.mustChangePassword === true && !!ownerLogin.body.refreshToken,
+    "owner login returns mustChangePassword=true and a refresh token",
+  );
+  const ownerToken = ownerLogin.body.accessToken;
 
   const blockedCreate = await req("/projects", { method: "POST", body: JSON.stringify({ name: "x" }) }, ownerToken);
   assert(blockedCreate.status === 403 && blockedCreate.body.code === "MUST_CHANGE_PASSWORD", "blocked from app routes until password changed");
@@ -88,7 +91,7 @@ async function main() {
 
   // Admin cannot create another admin.
   const adminLogin1 = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "alice@cpa.test", password: "temp-pw-123" }) });
-  const adminToken0 = adminLogin1.body.token;
+  const adminToken0 = adminLogin1.body.accessToken;
   await req("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword: "temp-pw-123", newPassword: "alice-real-pw" }) }, adminToken0);
   const adminTryCreateAdmin = await req(
     "/users",
@@ -97,14 +100,40 @@ async function main() {
   );
   assert(adminTryCreateAdmin.status === 403, "admin is blocked from creating another admin");
 
-  // Member and analyst log in and change password too.
-  const memberLogin = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "mo@cpa.test", password: "temp-pw-123" }) });
-  const memberToken0 = memberLogin.body.token;
+  // Member and analyst log in and change password too. Member logs in with
+  // rememberMe: true — used below for the refresh-token flow.
+  const memberLogin = await req("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: "mo@cpa.test", password: "temp-pw-123", rememberMe: true }),
+  });
+  const memberToken0 = memberLogin.body.accessToken;
+  let memberRefreshToken = memberLogin.body.refreshToken;
   await req("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword: "temp-pw-123", newPassword: "mo-real-pw" }) }, memberToken0);
 
   const analystLogin = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "ana@cpa.test", password: "temp-pw-123" }) });
-  const analystToken0 = analystLogin.body.token;
+  const analystToken0 = analystLogin.body.accessToken;
   await req("/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword: "temp-pw-123", newPassword: "ana-real-pw" }) }, analystToken0);
+
+  // --- Refresh token rotation + reuse detection ---
+
+  const refresh1 = await req("/auth/refresh", { method: "POST", body: JSON.stringify({ refreshToken: memberRefreshToken }) });
+  assert(refresh1.status === 200 && !!refresh1.body.accessToken && !!refresh1.body.refreshToken, "refresh token exchanges for a new access + refresh token");
+  const rotatedRefreshToken = refresh1.body.refreshToken;
+  assert(rotatedRefreshToken !== memberRefreshToken, "rotation issues a genuinely new refresh token, not the same one back");
+
+  const newAccessWorks = await req("/projects", {}, refresh1.body.accessToken);
+  assert(newAccessWorks.status === 200, "the freshly refreshed access token actually works");
+
+  // Replaying the now-rotated-away original refresh token is reuse — should
+  // fail AND nuke every refresh token this user has, including the one we
+  // just legitimately got back from refresh1.
+  const reusedOldToken = await req("/auth/refresh", { method: "POST", body: JSON.stringify({ refreshToken: memberRefreshToken }) });
+  assert(reusedOldToken.status === 401, "replaying an already-rotated refresh token is rejected");
+
+  const rotatedTokenNowDead = await req("/auth/refresh", { method: "POST", body: JSON.stringify({ refreshToken: rotatedRefreshToken }) });
+  assert(rotatedTokenNowDead.status === 401, "reuse detection revoked the legitimately-rotated token too, as a precaution");
+
+  // --- Business logic (projects/purchases/roles), using fresh tokens ---
 
   // Member creates a project -> forbidden.
   const memberCreateProject = await req("/projects", { method: "POST", body: JSON.stringify({ name: "Warehouse Fit-out" }) }, memberToken0);
@@ -173,12 +202,20 @@ async function main() {
   const memberAuditLog = await req("/audit-log", {}, memberToken0);
   assert(memberAuditLog.status === 403, "member cannot read audit log");
 
-  // Owner deactivates the member; their token should stop working immediately.
+  // A fresh member login, to test that deactivation revokes refresh tokens too (separate from the reuse-detection test above, which already burned the first one).
+  const memberLogin2 = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "mo@cpa.test", password: "mo-real-pw" }) });
+  const memberRefreshToken2 = memberLogin2.body.refreshToken;
+
+  // Owner deactivates the member; their access token should stop working immediately...
   const memberUserId = createMember.body.id;
   const deactivate = await req(`/users/${memberUserId}`, { method: "DELETE" }, ownerToken);
   assert(deactivate.status === 204, "owner deactivates the member account");
   const deactivatedAccess = await req("/projects", {}, memberToken0);
-  assert(deactivatedAccess.status === 401, "deactivated member's existing token is rejected immediately");
+  assert(deactivatedAccess.status === 401, "deactivated member's existing access token is rejected immediately");
+
+  // ...and so should their refresh token, not just their access token.
+  const deactivatedRefresh = await req("/auth/refresh", { method: "POST", body: JSON.stringify({ refreshToken: memberRefreshToken2 }) });
+  assert(deactivatedRefresh.status === 401, "deactivating a user also revokes their refresh token");
 
   // Admin cannot deactivate another admin or the owner.
   const secondAdmin = await req(
@@ -189,9 +226,19 @@ async function main() {
   const adminTryDeactivateAdmin = await req(`/users/${secondAdmin.body.id}`, { method: "DELETE" }, adminToken0);
   assert(adminTryDeactivateAdmin.status === 403, "admin cannot deactivate another admin");
 
-  // Login rate limiting: default is 10 attempts / 15 min per IP. We've made
-  // 4 real logins already in this run; hammer bad credentials until we
-  // either see a 429 or exceed the configured max, whichever comes first.
+  // Logout revokes the presented refresh token.
+  const analystLoginForLogout = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "ana@cpa.test", password: "ana-real-pw" }) });
+  const logoutResult = await req(
+    "/auth/logout",
+    { method: "POST", body: JSON.stringify({ refreshToken: analystLoginForLogout.body.refreshToken }) },
+    analystLoginForLogout.body.accessToken,
+  );
+  assert(logoutResult.status === 204, "logout succeeds");
+  const refreshAfterLogout = await req("/auth/refresh", { method: "POST", body: JSON.stringify({ refreshToken: analystLoginForLogout.body.refreshToken }) });
+  assert(refreshAfterLogout.status === 401, "refresh token is dead immediately after logout");
+
+  // Login rate limiting: default is 10 attempts / 15 min per IP. Hammer bad
+  // credentials until we either see a 429 or exceed the configured max.
   let sawRateLimited = false;
   for (let i = 0; i < 10; i++) {
     const attempt = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "nobody@cpa.test", password: "wrong" }) });

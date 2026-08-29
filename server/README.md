@@ -1,8 +1,8 @@
 # CPA server
 
 Node/Express/TypeScript API backing the CPA mobile app. MongoDB (Atlas free M0 tier) for storage,
-JWT for auth. Deploys to Render's free web service tier — $0, no card required, cold-starts
-after 15 min idle.
+short-lived JWT access tokens + long-lived refresh tokens for auth. Deploys to Render's free web
+service tier — $0, no card required, cold-starts after 15 min idle.
 
 ## Roles
 
@@ -29,6 +29,26 @@ row and value are still in the database. Every create/rename/edit/delete/role-ch
 `AuditLog` entry with before/after values and who did it (`GET /audit-log`, Owner/Admin/Analyst
 only) — this is the fraud-prevention layer.
 
+## Auth: access + refresh tokens
+
+`POST /auth/login` takes `{ email, password, rememberMe? }` and returns an **access token** (a
+short-lived JWT, default 15 min — `ACCESS_TOKEN_EXPIRES_IN`) and a **refresh token** (an opaque
+random string, not a JWT). The client uses the access token on every request and, when it
+expires, calls `POST /auth/refresh` with the refresh token to get a new pair — this should
+happen silently in the background, not as a user-visible re-login.
+
+Refresh tokens are stored server-side as a SHA-256 hash only (`models/RefreshToken.ts`), which is
+what makes them individually revocable — a DB leak alone can't be replayed, and deactivating a
+user (`DELETE /users/:id`) revokes all of theirs immediately, not just their currently-live access
+token. Every refresh **rotates**: the old token is marked used and a new one issued
+(`src/tokens.ts`). If an already-used refresh token is ever presented again — a sign it was
+copied and replayed by someone else — every refresh token for that user is revoked at once,
+forcing a clean re-login everywhere. `POST /auth/logout` revokes just the one token it's given.
+
+`rememberMe: true` at login gets a 30-day refresh token (`REFRESH_TOKEN_TTL_REMEMBER_ME_DAYS`);
+without it, 1 day (`REFRESH_TOKEN_TTL_DEFAULT_DAYS`) — either way the session stays refreshable,
+just for a shorter window if the device isn't trusted long-term.
+
 ## Security configuration
 
 Every security-relevant knob lives in `src/config/`, not scattered across route files:
@@ -36,7 +56,7 @@ Every security-relevant knob lives in `src/config/`, not scattered across route 
 | File | Owns |
 |---|---|
 | `config/env.ts` | Raw env-var reading helpers (`requireEnv`/`optionalEnv`/`optionalNumber`) |
-| `config/security.ts` | JWT secret + expiry, bcrypt cost, min password length, CORS origins, login rate limit |
+| `config/security.ts` | JWT secret, access/refresh token lifetimes, bcrypt cost, min password length, CORS origins, login rate limit |
 | `config/server.ts` | Port, `NODE_ENV`, Mongo URI |
 | `config/owner.ts` | The one-time Owner-seed credentials |
 | `config/index.ts` | Barrel re-export — `import { securityConfig, serverConfig } from "./config/index.js"` |
@@ -61,8 +81,8 @@ npm run dev        # http://localhost:4000
 
 ```bash
 npm test           # spins up a real in-memory MongoDB and exercises every role/permission
-                    # path, the password-change gate, soft-delete, the audit trail, and the
-                    # login rate limiter
+                    # path, the password-change gate, soft-delete, the audit trail, refresh
+                    # token rotation + reuse detection, and the login rate limiter
 ```
 
 ## Deploy (Render free tier, $0)
