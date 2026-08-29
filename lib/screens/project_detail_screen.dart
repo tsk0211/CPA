@@ -1,125 +1,331 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../db.dart';
-import '../models.dart';
-import '../widgets/add_purchase_sheet.dart';
+import '../models/audit_entry.dart';
+import '../models/project.dart';
+import '../models/purchase.dart';
+import '../state/app_scope.dart';
+import '../widgets/add_edit_project_sheet.dart';
+import '../widgets/add_edit_purchase_sheet.dart';
+import '../widgets/audit_entry_tile.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
-
   const ProjectDetailScreen({super.key, required this.project});
 
   @override
   State<ProjectDetailScreen> createState() => _ProjectDetailScreenState();
 }
 
-class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
-  late Future<List<Purchase>> _future;
+class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTickerProviderStateMixin {
+  late Project _project = widget.project;
+  TabController? _tabController;
 
   @override
   void initState() {
     super.initState();
-    _future = AppDatabase.instance.purchasesForProject(widget.project.id!);
+    final scope = AppScope.of(context);
+    final showActivityTab = scope.session.user!.role.canSeeActivityLog;
+    _tabController = showActivityTab ? TabController(length: 2, vsync: this) : null;
   }
 
-  void _refresh() => setState(() => _future = AppDatabase.instance.purchasesForProject(widget.project.id!));
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
+  }
 
-  Future<void> _deleteProject() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete ${widget.project.name}?'),
-        content: const Text('This removes the project and all of its purchase records.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await AppDatabase.instance.deleteProject(widget.project.id!);
-      if (mounted) Navigator.of(context).pop();
-    }
+  Future<void> _editProject() async {
+    final scope = AppScope.of(context);
+    final result = await showAddEditProjectSheet(context, existing: _project);
+    if (result == null) return;
+    final updated = await scope.projects.update(_project.id, result.$1, result.$2);
+    if (!mounted) return;
+    setState(() => _project = updated);
   }
 
   @override
   Widget build(BuildContext context) {
+    final role = AppScope.of(context).session.user!.role;
     final currency = NumberFormat.simpleCurrency();
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.project.name),
-        actions: [
-          IconButton(onPressed: _deleteProject, icon: const Icon(Icons.delete_outline)),
+        title: GestureDetector(
+          onTap: role.canManageProjects ? _editProject : null,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_project.icon),
+              const SizedBox(width: 8),
+              Flexible(child: Text(_project.name, overflow: TextOverflow.ellipsis)),
+              if (role.canManageProjects) const Icon(Icons.edit, size: 16),
+            ],
+          ),
+        ),
+        bottom: _tabController != null
+            ? TabBar(controller: _tabController, tabs: const [Tab(text: "Purchases"), Tab(text: "Activity")])
+            : null,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Total spent"),
+                Text(currency.format(_project.totalSpent), style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _tabController != null
+                ? TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _PurchasesTab(project: _project),
+                      _ActivityTab(projectId: _project.id),
+                    ],
+                  )
+                : _PurchasesTab(project: _project),
+          ),
         ],
       ),
-      body: FutureBuilder<List<Purchase>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final purchases = snapshot.data!;
-          final total = purchases.fold<double>(0, (sum, p) => sum + p.amount);
+      floatingActionButton: role.canAddPurchases
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text("Purchase"),
+              onPressed: () async {
+                final changed = await showAddEditPurchaseSheet(context, projectId: _project.id, projectName: _project.name);
+                if (changed == true) setState(() {});
+              },
+            )
+          : null,
+    );
+  }
+}
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Total spent'),
-                    Text(
-                      currency.format(total),
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+class _PurchasesTab extends StatefulWidget {
+  final Project project;
+  const _PurchasesTab({required this.project});
+
+  @override
+  State<_PurchasesTab> createState() => _PurchasesTabState();
+}
+
+class _PurchasesTabState extends State<_PurchasesTab> {
+  final _scrollController = ScrollController();
+  final _searchController = TextEditingController();
+  Timer? _debounce;
+
+  final List<Purchase> _items = [];
+  int _page = 1;
+  bool _hasMore = true;
+  bool _loading = false;
+  String _search = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFirstPage();
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) _loadNextPage();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadFirstPage() async {
+    setState(() {
+      _loading = true;
+      _page = 1;
+      _hasMore = true;
+    });
+    final result = await AppScope.of(context).purchases.forProject(widget.project.id, page: 1, search: _search);
+    if (!mounted) return;
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(result.items);
+      _hasMore = result.hasMore;
+      _loading = false;
+    });
+  }
+
+  Future<void> _loadNextPage() async {
+    if (_loading || !_hasMore) return;
+    setState(() => _loading = true);
+    final result = await AppScope.of(context).purchases.forProject(widget.project.id, page: _page + 1, search: _search);
+    if (!mounted) return;
+    setState(() {
+      _items.addAll(result.items);
+      _page += 1;
+      _hasMore = result.hasMore;
+      _loading = false;
+    });
+  }
+
+  void _onSearchChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      _search = value;
+      _loadFirstPage();
+    });
+  }
+
+  Future<void> _editPurchase(Purchase purchase) async {
+    final changed = await showAddEditPurchaseSheet(context, projectId: widget.project.id, projectName: widget.project.name, existing: purchase);
+    if (changed == true) _loadFirstPage();
+  }
+
+  Future<void> _deletePurchase(Purchase purchase) async {
+    await AppScope.of(context).purchases.delete(purchase.id);
+    _loadFirstPage();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = AppScope.of(context);
+    final role = scope.session.user!.role;
+    final currency = NumberFormat.simpleCurrency();
+    final pendingForProject = scope.offlineQueue.pending.where((p) => p.projectId == widget.project.id).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: TextField(
+            controller: _searchController,
+            decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: "Search purchases…", isDense: true),
+            onChanged: _onSearchChanged,
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadFirstPage,
+            child: ListView.builder(
+              controller: _scrollController,
+              itemCount: pendingForProject.length + _items.length + 1,
+              itemBuilder: (context, index) {
+                if (index < pendingForProject.length) {
+                  final pending = pendingForProject[index];
+                  return ListTile(
+                    leading: const Icon(Icons.cloud_upload_outlined),
+                    title: Text(pending.description),
+                    subtitle: const Text("Pending sync"),
+                    trailing: Text(currency.format(pending.amount)),
+                  );
+                }
+                final itemIndex = index - pendingForProject.length;
+                if (itemIndex < _items.length) {
+                  final purchase = _items[itemIndex];
+                  final tile = ListTile(
+                    title: Text(purchase.description),
+                    subtitle: Text(
+                      "${DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt)}${purchase.editedAt != null ? ' · edited' : ''}",
                     ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: purchases.isEmpty
-                    ? const Center(child: Text('No purchases logged for this project yet.'))
-                    : ListView.builder(
-                        itemCount: purchases.length,
-                        itemBuilder: (context, i) {
-                          final purchase = purchases[i];
-                          return Dismissible(
-                            key: ValueKey(purchase.id),
-                            direction: DismissDirection.endToStart,
-                            background: Container(
-                              color: Theme.of(context).colorScheme.errorContainer,
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: const Icon(Icons.delete_outline),
-                            ),
-                            onDismissed: (_) async {
-                              await AppDatabase.instance.deletePurchase(purchase.id!);
-                            },
-                            child: ListTile(
-                              title: Text(purchase.description),
-                              subtitle: Text(DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt)),
-                              trailing: Text(
-                                currency.format(purchase.amount),
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        icon: const Icon(Icons.add),
-        label: const Text('Purchase'),
-        onPressed: () async {
-          final added = await showAddPurchaseSheet(context, projects: [widget.project], fixedProject: widget.project);
-          if (added == true) _refresh();
-        },
-      ),
+                    trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  );
+                  if (!role.canEditPurchases) return tile;
+                  return Dismissible(
+                    key: ValueKey(purchase.id),
+                    direction: DismissDirection.endToStart,
+                    confirmDismiss: (_) async {
+                      _deletePurchase(purchase);
+                      return false; // we refresh the list ourselves
+                    },
+                    background: Container(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: const Icon(Icons.delete_outline),
+                    ),
+                    child: InkWell(onTap: () => _editPurchase(purchase), child: tile),
+                  );
+                }
+                if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+                if (_items.isEmpty && pendingForProject.isEmpty) {
+                  return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("No purchases logged yet.")));
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActivityTab extends StatefulWidget {
+  final String projectId;
+  const _ActivityTab({required this.projectId});
+
+  @override
+  State<_ActivityTab> createState() => _ActivityTabState();
+}
+
+class _ActivityTabState extends State<_ActivityTab> {
+  late Future<void> _future;
+  final List<AuditEntry> _items = [];
+  int _page = 1;
+  bool _hasMore = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<void> _load() async {
+    final result = await AppScope.of(context).auditLog.list(projectId: widget.projectId, page: 1);
+    _items
+      ..clear()
+      ..addAll(result.items);
+    _hasMore = result.hasMore;
+    _page = 1;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+        if (_items.isEmpty) return const Center(child: Text("No activity recorded for this project yet."));
+        return RefreshIndicator(
+          onRefresh: () async => setState(() => _future = _load()),
+          child: ListView.builder(
+            itemCount: _items.length + (_hasMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index >= _items.length) {
+                return TextButton(
+                  onPressed: () async {
+                    final result = await AppScope.of(context).auditLog.list(projectId: widget.projectId, page: _page + 1);
+                    setState(() {
+                      _items.addAll(result.items);
+                      _page += 1;
+                      _hasMore = result.hasMore;
+                    });
+                  },
+                  child: const Text("Load more"),
+                );
+              }
+              return AuditEntryTile(entry: _items[index]);
+            },
+          ),
+        );
+      },
     );
   }
 }
