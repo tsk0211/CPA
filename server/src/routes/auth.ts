@@ -52,6 +52,15 @@ authRouter.post("/refresh", async (req, res) => {
   res.json({ accessToken: signAccessToken(user._id), refreshToken: result.newRawToken });
 });
 
+// Lets the client re-validate a cached user (role, name) against the
+// server on app startup, rather than trusting whatever was last persisted
+// locally — a role change or deactivation while the app was closed should
+// be reflected the moment it reopens, not silently stay stale.
+authRouter.get("/me", requireAuth, async (req: AuthedRequest, res) => {
+  const { id, name, email, role, mustChangePassword } = req.user!;
+  res.json({ id, name, email, role, mustChangePassword });
+});
+
 authRouter.post("/logout", requireAuth, async (req, res) => {
   const { refreshToken } = req.body as { refreshToken?: string };
   if (refreshToken) await revokeRefreshToken(refreshToken);

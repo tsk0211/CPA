@@ -3,7 +3,7 @@ import { verifyAccessToken } from "../tokens.js";
 import { User, type Role } from "../models/User.js";
 
 export interface AuthedRequest extends Request {
-  user?: { id: string; role: Role; name: string; mustChangePassword: boolean };
+  user?: { id: string; role: Role; name: string; email: string; mustChangePassword: boolean };
 }
 
 // Looks the user up fresh on every request (rather than trusting the JWT's
@@ -19,7 +19,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     const user = await User.findById(decoded.id);
     if (!user || user.deletedAt) return res.status(401).json({ error: "account not found or deactivated" });
 
-    req.user = { id: user._id, role: user.role, name: user.name, mustChangePassword: user.mustChangePassword };
+    req.user = { id: user._id, role: user.role, name: user.name, email: user.email, mustChangePassword: user.mustChangePassword };
     next();
   } catch {
     // Covers both a malformed token and an expired one — the client's
