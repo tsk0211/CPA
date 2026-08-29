@@ -1,6 +1,8 @@
 import cors from "cors";
-import "dotenv/config";
 import express from "express";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
+import { securityConfig, serverConfig } from "./config/index.js";
 import { connectDb } from "./db.js";
 import { auditLogRouter } from "./routes/auditLog.js";
 import { authRouter } from "./routes/auth.js";
@@ -11,10 +13,24 @@ import { seedOwner } from "./seedOwner.js";
 
 export function createApp() {
   const app = express();
-  app.use(cors());
+  app.use(helmet());
+  app.use(
+    cors({
+      origin: securityConfig.corsOrigins.includes("*") ? true : securityConfig.corsOrigins,
+    }),
+  );
   app.use(express.json());
 
+  const loginLimiter = rateLimit({
+    windowMs: securityConfig.loginRateLimit.windowMs,
+    limit: securityConfig.loginRateLimit.max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "too many login attempts, try again later" },
+  });
+
   app.get("/health", (_req, res) => res.json({ ok: true }));
+  app.use("/auth/login", loginLimiter);
   app.use("/auth", authRouter);
   app.use("/projects", projectsRouter);
   app.use("/purchases", purchasesRouter);
@@ -25,14 +41,11 @@ export function createApp() {
 }
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error("MONGODB_URI is not set (see .env.example)");
-  await connectDb(uri);
+  await connectDb(serverConfig.mongoUri);
   await seedOwner();
 
   const app = createApp();
-  const port = process.env.PORT ?? 4000;
-  app.listen(port, () => console.log(`CPA server listening on http://localhost:${port}`));
+  app.listen(serverConfig.port, () => console.log(`CPA server listening on http://localhost:${serverConfig.port}`));
 }
 
 if (process.env.NODE_ENV !== "test") {

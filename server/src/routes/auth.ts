@@ -1,7 +1,8 @@
 import bcrypt from "bcryptjs";
 import { Router } from "express";
-import { User } from "../models/User.js";
+import { securityConfig } from "../config/index.js";
 import { requireAuth, signToken, type AuthedRequest } from "../middleware/auth.js";
+import { User } from "../models/User.js";
 
 export const authRouter = Router();
 
@@ -28,8 +29,10 @@ authRouter.post("/login", async (req, res) => {
 // "change my password" action later — same endpoint either way.
 authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res) => {
   const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
-  if (!currentPassword || !newPassword || newPassword.length < 8) {
-    return res.status(400).json({ error: "currentPassword and a newPassword of at least 8 characters are required" });
+  if (!currentPassword || !newPassword || newPassword.length < securityConfig.minPasswordLength) {
+    return res
+      .status(400)
+      .json({ error: `currentPassword and a newPassword of at least ${securityConfig.minPasswordLength} characters are required` });
   }
 
   const user = await User.findById(req.user!.id);
@@ -38,7 +41,7 @@ authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res)
   const valid = await bcrypt.compare(currentPassword, user.passwordHash);
   if (!valid) return res.status(401).json({ error: "current password is incorrect" });
 
-  user.passwordHash = await bcrypt.hash(newPassword, 10);
+  user.passwordHash = await bcrypt.hash(newPassword, securityConfig.bcryptSaltRounds);
   user.mustChangePassword = false;
   await user.save();
 

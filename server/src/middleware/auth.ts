@@ -1,19 +1,14 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import { securityConfig } from "../config/index.js";
 import { User, type Role } from "../models/User.js";
 
 export interface AuthedRequest extends Request {
   user?: { id: string; role: Role; name: string; mustChangePassword: boolean };
 }
 
-function secret(): string {
-  const s = process.env.JWT_SECRET;
-  if (!s) throw new Error("JWT_SECRET is not set");
-  return s;
-}
-
 export function signToken(userId: string): string {
-  return jwt.sign({ id: userId }, secret(), { expiresIn: "30d" });
+  return jwt.sign({ id: userId }, securityConfig.jwtSecret, { expiresIn: securityConfig.jwtExpiresIn as jwt.SignOptions["expiresIn"] });
 }
 
 // Looks the user up fresh on every request (rather than trusting the JWT's
@@ -25,7 +20,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   if (!token) return res.status(401).json({ error: "missing bearer token" });
 
   try {
-    const decoded = jwt.verify(token, secret()) as { id: string };
+    const decoded = jwt.verify(token, securityConfig.jwtSecret) as { id: string };
     const user = await User.findById(decoded.id);
     if (!user || user.deletedAt) return res.status(401).json({ error: "account not found or deactivated" });
 

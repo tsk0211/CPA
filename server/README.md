@@ -29,12 +29,29 @@ row and value are still in the database. Every create/rename/edit/delete/role-ch
 `AuditLog` entry with before/after values and who did it (`GET /audit-log`, Owner/Admin/Analyst
 only) — this is the fraud-prevention layer.
 
+## Security configuration
+
+Every security-relevant knob lives in `src/config/`, not scattered across route files:
+
+| File | Owns |
+|---|---|
+| `config/env.ts` | Raw env-var reading helpers (`requireEnv`/`optionalEnv`/`optionalNumber`) |
+| `config/security.ts` | JWT secret + expiry, bcrypt cost, min password length, CORS origins, login rate limit |
+| `config/server.ts` | Port, `NODE_ENV`, Mongo URI |
+| `config/owner.ts` | The one-time Owner-seed credentials |
+| `config/index.ts` | Barrel re-export — `import { securityConfig, serverConfig } from "./config/index.js"` |
+
+Every value has a default (see `.env.example`) except the secrets, which fail loudly on startup
+if missing rather than silently running insecurely. `JWT_SECRET` specifically is rejected below
+32 characters. `POST /auth/login` is rate-limited (`LOGIN_RATE_LIMIT_*`, default 10/15min per IP)
+and the app sends `helmet()`'s security headers on every response.
+
 ## Setup
 
 ```bash
 cp .env.example .env
-# edit .env: MONGODB_URI (Atlas free cluster), JWT_SECRET (openssl rand -hex 32),
-# OWNER_NAME / OWNER_EMAIL / OWNER_PASSWORD (only used once, on first boot)
+# fill in MONGODB_URI, JWT_SECRET, and OWNER_NAME/OWNER_EMAIL/OWNER_PASSWORD
+# (see the comments in .env.example for what each optional var does)
 
 npm install
 npm run dev        # http://localhost:4000
@@ -43,13 +60,25 @@ npm run dev        # http://localhost:4000
 ## Test
 
 ```bash
-npm test           # spins up a real in-memory MongoDB and exercises every role/permission path
+npm test           # spins up a real in-memory MongoDB and exercises every role/permission
+                    # path, the password-change gate, soft-delete, the audit trail, and the
+                    # login rate limiter
 ```
 
-## Deploy (Render free tier)
+## Deploy (Render free tier, $0)
 
-1. Push this repo to GitHub.
-2. Render dashboard -> New -> Web Service -> connect the repo, root directory `server`.
-3. Build command: `npm install && npm run build`. Start command: `npm start`.
-4. Add the same env vars as `.env` in Render's dashboard (never commit `.env`).
-5. First deploy seeds the Owner account automatically from `OWNER_*` env vars.
+`render.yaml` in this directory is a Render Blueprint — deploy declaratively instead of clicking
+through dashboard settings by hand:
+
+1. Push this repo to GitHub/GitLab.
+2. Render dashboard -> New -> Blueprint -> connect the repo. Render reads `server/render.yaml`
+   and proposes the `cpa-server` web service (free plan, Node runtime, health check on
+   `/health`).
+3. Render will prompt for the env vars marked `sync: false` in `render.yaml` — that's
+   `MONGODB_URI`, `JWT_SECRET`, `OWNER_NAME`, `OWNER_EMAIL`, `OWNER_PASSWORD`. Fill those in;
+   everything else already has a value from the blueprint.
+4. Deploy. First boot seeds the Owner account automatically, then the blueprint's env vars are
+   the only source of truth going forward — nothing security-relevant lives in committed code.
+5. Free-tier services sleep after 15 min idle; the first request after a lull takes ~30s to wake
+   up. Fine for a demo, not for production — that's the upgrade conversation once the client
+   pays.

@@ -1,0 +1,45 @@
+# Render "Blueprint" — infrastructure as code for the free web service.
+# Render dashboard -> New -> Blueprint -> point at this repo. Render reads
+# this file and proposes the service below; you only fill in the envVars
+# marked `sync: false` (secrets, never committed) in the dashboard.
+#
+# See ../README.md "Deploy" section for the one-time MongoDB Atlas + Owner
+# seeding steps that go alongside this.
+
+services:
+  - type: web
+    name: cpa-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Secrets and per-deployment values — set these in the Render
+      # dashboard after the first Blueprint sync, never in this file.
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OWNER_NAME
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
+      # Tunable defaults — fine to leave as-is, override here if needed.
+      - key: BCRYPT_SALT_ROUNDS
+        value: "12"
+      - key: MIN_PASSWORD_LENGTH
+        value: "8"
+      - key: JWT_EXPIRES_IN
+        value: 30d
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: LOGIN_RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: LOGIN_RATE_LIMIT_MAX
+        value: "10"

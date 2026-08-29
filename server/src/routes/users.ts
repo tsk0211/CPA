@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { Router } from "express";
 import { logActivity } from "../audit.js";
+import { securityConfig } from "../config/index.js";
 import { requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
 import { User, type Role } from "../models/User.js";
 
@@ -23,8 +24,10 @@ usersRouter.post("/", async (req: AuthedRequest, res) => {
     tempPassword?: string;
     role?: Role;
   };
-  if (!name?.trim() || !email?.trim() || !tempPassword || tempPassword.length < 8) {
-    return res.status(400).json({ error: "name, email, and a tempPassword of at least 8 characters are required" });
+  if (!name?.trim() || !email?.trim() || !tempPassword || tempPassword.length < securityConfig.minPasswordLength) {
+    return res
+      .status(400)
+      .json({ error: `name, email, and a tempPassword of at least ${securityConfig.minPasswordLength} characters are required` });
   }
   if (role !== "admin" && role !== "analyst" && role !== "member") {
     return res.status(400).json({ error: "role must be 'admin', 'analyst', or 'member'" });
@@ -36,7 +39,7 @@ usersRouter.post("/", async (req: AuthedRequest, res) => {
   const existing = await User.findOne({ email: email.toLowerCase().trim() });
   if (existing) return res.status(409).json({ error: "an account with this email already exists" });
 
-  const passwordHash = await bcrypt.hash(tempPassword, 10);
+  const passwordHash = await bcrypt.hash(tempPassword, securityConfig.bcryptSaltRounds);
   const user = await User.create({
     name: name.trim(),
     email: email.toLowerCase().trim(),

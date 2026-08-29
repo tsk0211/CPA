@@ -3,7 +3,7 @@ import { connectDb } from "./db.js";
 import { createApp } from "./index.js";
 import { seedOwner } from "./seedOwner.js";
 
-process.env.JWT_SECRET = "test-secret";
+process.env.JWT_SECRET = "test-secret-at-least-32-characters-long";
 process.env.OWNER_NAME = "Tushar";
 process.env.OWNER_EMAIL = "owner@cpa.test";
 process.env.OWNER_PASSWORD = "owner-temp-pw";
@@ -188,6 +188,19 @@ async function main() {
   );
   const adminTryDeactivateAdmin = await req(`/users/${secondAdmin.body.id}`, { method: "DELETE" }, adminToken0);
   assert(adminTryDeactivateAdmin.status === 403, "admin cannot deactivate another admin");
+
+  // Login rate limiting: default is 10 attempts / 15 min per IP. We've made
+  // 4 real logins already in this run; hammer bad credentials until we
+  // either see a 429 or exceed the configured max, whichever comes first.
+  let sawRateLimited = false;
+  for (let i = 0; i < 10; i++) {
+    const attempt = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "nobody@cpa.test", password: "wrong" }) });
+    if (attempt.status === 429) {
+      sawRateLimited = true;
+      break;
+    }
+  }
+  assert(sawRateLimited, "repeated login attempts eventually get rate-limited (429)");
 
   server.close();
   await mongod.stop();
