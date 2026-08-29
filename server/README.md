@@ -12,7 +12,7 @@ service tier — $0, no card required, cold-starts after 15 min idle.
 | Add purchase | x | x | | x |
 | Edit/delete purchase | x | x | | |
 | Create/rename/delete project | x | x | | |
-| Export (CSV) | x | x | x | |
+| Export (CSV/XLSX) | x | x | x | |
 | Create member/analyst accounts | x | x | | |
 | Create admin accounts | x | | | |
 | Deactivate admin accounts | x | | | |
@@ -28,6 +28,26 @@ account is created by an Owner/Admin with a temp password, and must be changed o
 row and value are still in the database. Every create/rename/edit/delete/role-change writes an
 `AuditLog` entry with before/after values and who did it (`GET /audit-log`, Owner/Admin/Analyst
 only) — this is the fraud-prevention layer.
+
+## Pagination, search, and reporting
+
+`GET /projects`, `GET /purchases/project/:id`, `GET /purchases/recent`, `GET /users`, and
+`GET /audit-log` are all paginated (`?page=&limit=`, capped at 100/page) and return
+`{ items, page, limit, total, hasMore }` rather than a bare array — projects are expected to
+scale into the hundreds, so nothing here was safe to return unbounded. Projects and purchases
+also support `?search=` (case-insensitive, injection-safe — see `src/pagination.ts`).
+
+`GET /purchases/recent` is the cross-project "what's been logged lately" feed (the app's
+Activity view) — not restricted to today, just most-recent-first with pagination.
+
+`GET /purchases/export?format=csv|xlsx&projectIds=id1,id2&from=ISO&to=ISO&includeAuditTrail=true`
+is the Reports screen's backing endpoint (Owner/Admin/Analyst only):
+- No `projectIds` → every active project. `from`/`to` filter by `purchasedAt`.
+- `format=xlsx` produces a real Excel workbook (`exceljs`) with typed columns, not just text.
+- `includeAuditTrail=true` (xlsx only — csv is a single flat file) adds a second "Audit Trail"
+  sheet: every project/purchase audit entry in the same scope, including entries for purchases
+  that have since been edited or soft-deleted, so "who changed what" is answerable even for
+  history that's no longer in the main sheet.
 
 ## Auth: access + refresh tokens
 
@@ -82,7 +102,8 @@ npm run dev        # http://localhost:4000
 ```bash
 npm test           # spins up a real in-memory MongoDB and exercises every role/permission
                     # path, the password-change gate, soft-delete, the audit trail, refresh
-                    # token rotation + reuse detection, and the login rate limiter
+                    # token rotation + reuse detection, pagination/search, csv+xlsx export
+                    # (including the audit-trail sheet), and the login rate limiter
 ```
 
 ## Deploy (Render free tier, $0)

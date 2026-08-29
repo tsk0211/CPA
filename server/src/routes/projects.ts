@@ -3,15 +3,33 @@ import { logActivity } from "../audit.js";
 import { blockIfMustChangePassword, requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
 import { Project } from "../models/Project.js";
 import { Purchase } from "../models/Purchase.js";
+import { parsePageParams, searchFilter, toPagedResult } from "../pagination.js";
 
 export const projectsRouter = Router();
 
 projectsRouter.use(requireAuth, blockIfMustChangePassword);
 
-// Any authenticated, active role can read.
-projectsRouter.get("/", async (_req, res) => {
-  const projects = await Project.find({ deletedAt: null }).sort({ name: 1 });
-  res.json(projects);
+// Any authenticated, active role can read. Paginated + searchable by name —
+// this list is expected to grow to 100+ projects, so it was never safe to
+// just return everything unbounded.
+projectsRouter.get("/", async (req, res) => {
+  const pageParams = parsePageParams(req);
+  const filter = { deletedAt: null, ...(searchFilter("name", req.query.search) ?? {}) };
+
+  const total = await Project.countDocuments(filter);
+  const projects = await Project.find(filter).sort({ name: 1 }).skip(pageParams.skip).limit(pageParams.limit);
+
+  // One aggregate query for all totals on this page, not one query per
+  // project — avoids an N+1 as the project count grows.
+  const projectIds = projects.map((p) => p._id);
+  const sums = await Purchase.aggregate<{ _id: string; total: number }>([
+    { $match: { projectId: { $in: projectIds }, deletedAt: null } },
+    { $group: { _id: "$projectId", total: { $sum: "$amount" } } },
+  ]);
+  const totalByProject = new Map(sums.map((s) => [s._id, s.total]));
+
+  const items = projects.map((p) => ({ ...p.toObject(), totalSpent: totalByProject.get(p._id) ?? 0 }));
+  res.json(toPagedResult(items, total, pageParams));
 });
 
 // Only owner/admin can create, rename, or delete projects.

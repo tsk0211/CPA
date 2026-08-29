@@ -4,6 +4,7 @@ import { logActivity } from "../audit.js";
 import { securityConfig } from "../config/index.js";
 import { requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
 import { User, type Role } from "../models/User.js";
+import { parsePageParams, searchFilter, toPagedResult } from "../pagination.js";
 import { revokeAllRefreshTokensForUser } from "../tokens.js";
 
 export const usersRouter = Router();
@@ -11,9 +12,18 @@ export const usersRouter = Router();
 usersRouter.use(requireAuth);
 usersRouter.use(requireRole("owner", "admin"));
 
-usersRouter.get("/", async (_req, res) => {
-  const users = await User.find({ deletedAt: null }).select("-passwordHash").sort({ name: 1 });
-  res.json(users);
+usersRouter.get("/", async (req, res) => {
+  const pageParams = parsePageParams(req);
+  const filter = { deletedAt: null, ...(searchFilter("name", req.query.search) ?? {}) };
+
+  const total = await User.countDocuments(filter);
+  const users = await User.find(filter)
+    .select("-passwordHash")
+    .sort({ name: 1 })
+    .skip(pageParams.skip)
+    .limit(pageParams.limit);
+
+  res.json(toPagedResult(users, total, pageParams));
 });
 
 // Owner can create admin/analyst/member. Admin can only create analyst/member.

@@ -42,6 +42,14 @@ async function main() {
     return { status: res.status, body };
   }
 
+  // For binary responses (xlsx) where res.json()/res.text() in req() above
+  // would misparse the body — just check status/content-type/size.
+  async function reqBinary(path: string, token?: string) {
+    const res = await fetch(base + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    const buffer = await res.arrayBuffer();
+    return { status: res.status, contentType: res.headers.get("content-type"), byteLength: buffer.byteLength };
+  }
+
   // Owner logs in with the seeded temp password, must change it before anything else works.
   const ownerLogin = await req("/auth/login", {
     method: "POST",
@@ -176,24 +184,58 @@ async function main() {
   assert(adminDelete.status === 204, "admin soft-deletes the purchase");
 
   const projectPurchasesAfterDelete = await req(`/purchases/project/${projectId}`, {}, adminToken0);
-  assert(projectPurchasesAfterDelete.body.length === 0, "soft-deleted purchase no longer appears in project purchase list");
+  assert(projectPurchasesAfterDelete.body.items.length === 0, "soft-deleted purchase no longer appears in project purchase list");
 
-  // Analyst can export.
-  const exportAll = await req("/purchases/export/all", {}, analystToken0);
-  assert(exportAll.status === 200 && typeof exportAll.body === "string" && exportAll.body.includes("project,amount"), "analyst can export CSV");
+  // --- Export: csv, xlsx, xlsx+audit-trail ---
+
+  const exportCsv = await req("/purchases/export?format=csv", {}, analystToken0);
+  assert(exportCsv.status === 200 && typeof exportCsv.body === "string" && exportCsv.body.includes("project,amount"), "analyst can export CSV");
+
+  const exportXlsx = await reqBinary("/purchases/export?format=xlsx", analystToken0);
+  assert(
+    exportXlsx.status === 200 &&
+      Boolean(exportXlsx.contentType?.includes("spreadsheetml")) &&
+      exportXlsx.byteLength > 1000,
+    "analyst can export a real .xlsx workbook",
+  );
+
+  const exportXlsxScopedNoAudit = await reqBinary(`/purchases/export?format=xlsx&projectIds=${projectId}`, adminToken0);
+  const exportXlsxScopedWithAudit = await reqBinary(`/purchases/export?format=xlsx&projectIds=${projectId}&includeAuditTrail=true`, adminToken0);
+  assert(
+    exportXlsxScopedWithAudit.status === 200 && exportXlsxScopedWithAudit.byteLength > exportXlsxScopedNoAudit.byteLength,
+    "xlsx export with includeAuditTrail is a genuinely bigger (two-sheet) workbook than the same scope without it",
+  );
 
   // Member cannot export.
-  const memberExport = await req("/purchases/export/all", {}, memberToken0);
+  const memberExport = await req("/purchases/export?format=csv", {}, memberToken0);
   assert(memberExport.status === 403, "member cannot export");
 
-  // Audit log has entries for everything above, and admin can read it.
+  // --- Cross-project recent activity feed ---
+
+  const recent = await req("/purchases/recent", {}, adminToken0);
+  assert(recent.status === 200 && Array.isArray(recent.body.items), "recent activity feed returns a paginated list");
+
+  // --- Pagination + search on projects, scaled to a few extra rows ---
+
+  for (const name of ["Site Survey Alpha", "Site Survey Beta", "Roofing Job"]) {
+    await req("/projects", { method: "POST", body: JSON.stringify({ name }) }, adminToken0);
+  }
+  const searchedProjects = await req(`/projects?search=${encodeURIComponent("Site Survey")}`, {}, adminToken0);
+  assert(
+    searchedProjects.status === 200 && searchedProjects.body.items.every((p: { name: string }) => p.name.includes("Site Survey")),
+    "project search filters by name",
+  );
+  const pagedProjects = await req("/projects?page=1&limit=2", {}, adminToken0);
+  assert(pagedProjects.status === 200 && pagedProjects.body.items.length === 2 && pagedProjects.body.hasMore === true, "project list respects page/limit and reports hasMore");
+
+  // Audit log has entries for everything above, and admin can read it — paginated too.
   const auditLog = await req("/audit-log", {}, adminToken0);
-  assert(auditLog.status === 200, "admin can read audit log");
-  const actions = (auditLog.body as { action: string }[]).map((a) => a.action);
+  assert(auditLog.status === 200 && Array.isArray(auditLog.body.items), "admin can read paginated audit log");
+  const actions = (auditLog.body.items as { action: string }[]).map((a) => a.action);
   for (const expected of ["user.create", "project.create", "purchase.create", "purchase.edit", "purchase.delete"]) {
     assert(actions.includes(expected), `audit log contains a ${expected} entry`);
   }
-  const editEntry = (auditLog.body as { action: string; before: { amount: number }; after: { amount: number } }[]).find(
+  const editEntry = (auditLog.body.items as { action: string; before: { amount: number }; after: { amount: number } }[]).find(
     (a) => a.action === "purchase.edit",
   );
   assert(editEntry?.before.amount === 250.5 && editEntry?.after.amount === 275, "purchase.edit audit entry has before/after amounts");
@@ -201,6 +243,13 @@ async function main() {
   // Member cannot read audit log.
   const memberAuditLog = await req("/audit-log", {}, memberToken0);
   assert(memberAuditLog.status === 403, "member cannot read audit log");
+
+  // Team user list is paginated + searchable too.
+  const searchedUsers = await req("/users?search=Admin", {}, ownerToken);
+  assert(
+    searchedUsers.status === 200 && searchedUsers.body.items.every((u: { name: string }) => u.name.includes("Admin")),
+    "user search filters by name",
+  );
 
   // A fresh member login, to test that deactivation revokes refresh tokens too (separate from the reuse-detection test above, which already burned the first one).
   const memberLogin2 = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "mo@cpa.test", password: "mo-real-pw" }) });
