@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Flutter's template only grants this in the debug-only manifest (for
+         hot reload) — release builds need it declared here explicitly, or
+         every network request silently fails with no usable error. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="cpa"
         android:name="${applicationName}"
