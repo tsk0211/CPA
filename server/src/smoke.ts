@@ -240,6 +240,17 @@ async function main() {
   );
   assert(editEntry?.before.amount === 250.5 && editEntry?.after.amount === 275, "purchase.edit audit entry has before/after amounts");
 
+  // Project-scoped audit trail (Project Detail's "Activity" section) —
+  // only this project's own entries, not other projects' or user-mgmt ones.
+  const projectAuditLog = await req(`/audit-log?projectId=${projectId}`, {}, adminToken0);
+  const projectActions = (projectAuditLog.body.items as { action: string }[]).map((a) => a.action);
+  assert(
+    projectAuditLog.status === 200 &&
+      ["project.create", "purchase.create", "purchase.edit", "purchase.delete"].every((a) => projectActions.includes(a)) &&
+      !projectActions.includes("user.create"),
+    "audit log scoped to one project includes its own history but not unrelated user-management entries",
+  );
+
   // Member cannot read audit log.
   const memberAuditLog = await req("/audit-log", {}, memberToken0);
   assert(memberAuditLog.status === 403, "member cannot read audit log");

@@ -40,6 +40,11 @@ also support `?search=` (case-insensitive, injection-safe — see `src/paginatio
 `GET /purchases/recent` is the cross-project "what's been logged lately" feed (the app's
 Activity view) — not restricted to today, just most-recent-first with pagination.
 
+`GET /audit-log?projectId=` scopes the trail to one project — its own `project.*` entries plus
+every `purchase.*` entry for a purchase that ever belonged to it (including since-edited or
+soft-deleted ones) — this is what backs the "Activity" section on Project Detail, as distinct
+from the unscoped global trail on the Team screen.
+
 `GET /purchases/export?format=csv|xlsx&projectIds=id1,id2&from=ISO&to=ISO&includeAuditTrail=true`
 is the Reports screen's backing endpoint (Owner/Admin/Analyst only):
 - No `projectIds` → every active project. `from`/`to` filter by `purchasedAt`.
