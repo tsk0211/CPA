@@ -12,7 +12,12 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm install && npm run build
+    # NODE_ENV=production below makes plain `npm install` skip
+    # devDependencies — which is exactly where typescript and every @types/*
+    # package live, so the TS compiler can't even find its own type
+    # declarations. --include=dev forces them in for the build step; the
+    # deployed *runtime* is still unaffected (dist/ is plain compiled JS).
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
