@@ -16,30 +16,38 @@ projectsRouter.get("/", async (_req, res) => {
 
 // Only owner/admin can create, rename, or delete projects.
 projectsRouter.post("/", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
-  const { name } = req.body as { name?: string };
+  const { name, icon } = req.body as { name?: string; icon?: string };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
-  const project = await Project.create({ name: name.trim(), createdBy: req.user!.id });
+  const project = await Project.create({
+    name: name.trim(),
+    icon: icon?.trim() || "📁",
+    createdBy: req.user!.id,
+  });
 
   await logActivity(req, {
     action: "project.create",
     entityType: "project",
     entityId: project._id,
-    after: { name: project.name },
+    after: { name: project.name, icon: project.icon },
   });
 
   res.status(201).json(project);
 });
 
+// Renaming and re-iconing a project are the same "edit" action from the
+// UI's perspective (one sheet, both fields) so they share one endpoint and
+// one audit entry.
 projectsRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
-  const { name } = req.body as { name?: string };
+  const { name, icon } = req.body as { name?: string; icon?: string };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
 
   const project = await Project.findOne({ _id: req.params.id, deletedAt: null });
   if (!project) return res.status(404).json({ error: "project not found" });
 
-  const before = { name: project.name };
+  const before = { name: project.name, icon: project.icon };
   project.name = name.trim();
+  if (icon?.trim()) project.icon = icon.trim();
   await project.save();
 
   await logActivity(req, {
@@ -47,7 +55,7 @@ projectsRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRe
     entityType: "project",
     entityId: project._id,
     before,
-    after: { name: project.name },
+    after: { name: project.name, icon: project.icon },
   });
 
   res.json(project);
