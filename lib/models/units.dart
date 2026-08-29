@@ -1,0 +1,26 @@
+// Mirrors server/src/units.ts exactly — a fixed dropdown list rather than
+// free text, so reports stay reliable. Keep these two lists in sync.
+const List<String> units = [
+  "kg",
+  "g",
+  "ton",
+  "liter",
+  "ml",
+  "gallon",
+  "m",
+  "cm",
+  "ft",
+  "inch",
+  "sq.m",
+  "sq.ft",
+  "piece",
+  "box",
+  "bag",
+  "roll",
+  "sheet",
+  "bundle",
+  "set",
+  "hour",
+  "day",
+  "lot",
+];

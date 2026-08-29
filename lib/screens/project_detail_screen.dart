@@ -231,9 +231,12 @@ class _PurchasesTabState extends State<_PurchasesTab> {
                   final purchase = _items[itemIndex];
                   final tile = ListTile(
                     title: Text(purchase.description),
-                    subtitle: Text(
-                      "${DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt)}${purchase.editedAt != null ? ' · edited' : ''}",
-                    ),
+                    subtitle: Text([
+                      if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
+                      if (purchase.vendor != null) purchase.vendor!,
+                      DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
+                      if (purchase.editedAt != null) "edited",
+                    ].join(" · ")),
                     trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
                   );
                   if (!role.canEditPurchases) return tile;

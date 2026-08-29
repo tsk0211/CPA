@@ -80,9 +80,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
               return ListTile(
                 leading: Text(purchase.projectIcon ?? "📁", style: const TextStyle(fontSize: 22)),
                 title: Text(purchase.description),
-                subtitle: Text(
-                  "${purchase.projectName ?? ''} · ${purchase.createdByName ?? ''} · ${DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt)}",
-                ),
+                subtitle: Text([
+                  purchase.projectName ?? '',
+                  if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
+                  purchase.createdByName ?? '',
+                  DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
+                ].join(" · ")),
                 trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
               );
             }

@@ -5,6 +5,11 @@ class Purchase {
   final String? projectIcon;
   final double amount;
   final String description;
+  final double? quantity;
+  final String? unit;
+  final String? vendor;
+  final String? category;
+  final String? notes;
   final String createdBy;
   final String? createdByName;
   final DateTime purchasedAt;
@@ -17,6 +22,11 @@ class Purchase {
     this.projectIcon,
     required this.amount,
     required this.description,
+    this.quantity,
+    this.unit,
+    this.vendor,
+    this.category,
+    this.notes,
     required this.createdBy,
     this.createdByName,
     required this.purchasedAt,
@@ -37,6 +47,11 @@ class Purchase {
       projectIcon: rawProject is Map ? rawProject["icon"] as String? : null,
       amount: (json["amount"] as num).toDouble(),
       description: json["description"] as String,
+      quantity: (json["quantity"] as num?)?.toDouble(),
+      unit: json["unit"] as String?,
+      vendor: json["vendor"] as String?,
+      category: json["category"] as String?,
+      notes: json["notes"] as String?,
       createdBy: rawCreatedBy is Map ? rawCreatedBy["_id"] as String : rawCreatedBy as String,
       createdByName: rawCreatedBy is Map ? rawCreatedBy["name"] as String? : null,
       purchasedAt: DateTime.parse(json["purchasedAt"] as String),

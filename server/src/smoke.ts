@@ -152,14 +152,61 @@ async function main() {
   assert(project.status === 201, "admin creates a project");
   const projectId = project.body._id;
 
-  // Member adds a purchase.
+  // Member adds a purchase, with quantity/unit/vendor/category/notes.
+  const purchaseKey = "idem-key-concrete-mix-1";
   const purchase = await req(
     "/purchases",
-    { method: "POST", body: JSON.stringify({ projectId, amount: 250.5, description: "Concrete mix" }) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        projectId,
+        amount: 250.5,
+        description: "Concrete mix",
+        quantity: 5,
+        unit: "bag",
+        vendor: "ACME Supplies",
+        category: "materials",
+        notes: "Delivered to site gate 2",
+        idempotencyKey: purchaseKey,
+      }),
+    },
     memberToken0,
   );
-  assert(purchase.status === 201, "member logs a purchase");
+  assert(
+    purchase.status === 201 && purchase.body.quantity === 5 && purchase.body.unit === "bag" && purchase.body.vendor === "ACME Supplies",
+    "member logs a purchase with quantity/unit/vendor/category/notes",
+  );
   const purchaseId = purchase.body._id;
+
+  // Retrying the exact same idempotency key (a dropped response, a
+  // re-synced offline item) must return the SAME purchase, not create a
+  // second one — this is the whole point of the key.
+  const retriedPurchase = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId, amount: 250.5, description: "Concrete mix", idempotencyKey: purchaseKey }) },
+    memberToken0,
+  );
+  const purchasesAfterRetry = await req(`/purchases/project/${projectId}`, {}, adminToken0);
+  assert(
+    retriedPurchase.status === 200 &&
+      retriedPurchase.body._id === purchaseId &&
+      purchasesAfterRetry.body.items.filter((p: { _id: string }) => p._id === purchaseId).length === 1,
+    "retrying the same idempotencyKey returns the original purchase, no duplicate created",
+  );
+
+  // quantity/unit must be provided together, and unit must be a known one.
+  const mismatchedQtyUnit = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId, amount: 5, description: "x", quantity: 2, idempotencyKey: "idem-bad-1" }) },
+    memberToken0,
+  );
+  assert(mismatchedQtyUnit.status === 400, "quantity without a unit is rejected");
+  const badUnit = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId, amount: 5, description: "x", quantity: 2, unit: "smoots", idempotencyKey: "idem-bad-2" }) },
+    memberToken0,
+  );
+  assert(badUnit.status === 400, "an unrecognized unit is rejected");
 
   // The project list's aggregated totalSpent must reflect real purchases —
   // this specifically regression-tests a bug where the totals aggregation

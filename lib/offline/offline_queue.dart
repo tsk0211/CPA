@@ -64,7 +64,17 @@ class OfflineQueue extends ChangeNotifier {
       final queue = List<PendingPurchase>.from(_pending);
       for (final item in queue) {
         try {
-          await api.create(projectId: item.projectId, amount: item.amount, description: item.description);
+          await api.create(
+            projectId: item.projectId,
+            amount: item.amount,
+            description: item.description,
+            idempotencyKey: item.localId,
+            quantity: item.quantity,
+            unit: item.unit,
+            vendor: item.vendor,
+            category: item.category,
+            notes: item.notes,
+          );
           _pending.removeWhere((p) => p.localId == item.localId);
           synced++;
           await _persist();

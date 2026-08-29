@@ -6,37 +6,77 @@ import { AuditLog } from "../models/AuditLog.js";
 import { Project } from "../models/Project.js";
 import { Purchase } from "../models/Purchase.js";
 import { parsePageParams, searchFilter, toPagedResult } from "../pagination.js";
+import { isValidUnit } from "../units.js";
 
 export const purchasesRouter = Router();
 
 purchasesRouter.use(requireAuth, blockIfMustChangePassword);
 
 // Owner, admin, and member can all log a cash purchase. Analyst is read/export only.
+//
+// idempotencyKey is required and client-generated (the offline queue's
+// local id, or a fresh one for an immediate save) — retrying the exact
+// same key (a dropped response, a re-synced offline item) returns the
+// original purchase instead of creating a duplicate. The unique index on
+// Purchase.idempotencyKey is what actually closes the race between the
+// findOne check below and a near-simultaneous duplicate request.
 purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: AuthedRequest, res) => {
-  const { projectId, amount, description } = req.body as {
+  const { projectId, amount, description, quantity, unit, vendor, category, notes, idempotencyKey } = req.body as {
     projectId?: string;
     amount?: number;
     description?: string;
+    quantity?: number;
+    unit?: string;
+    vendor?: string;
+    category?: string;
+    notes?: string;
+    idempotencyKey?: string;
   };
-  if (!projectId || !amount || amount <= 0 || !description?.trim()) {
-    return res.status(400).json({ error: "projectId, a positive amount, and a description are required" });
+  if (!projectId || !amount || amount <= 0 || !description?.trim() || !idempotencyKey?.trim()) {
+    return res.status(400).json({ error: "projectId, a positive amount, a description, and an idempotencyKey are required" });
   }
+  if ((quantity !== undefined) !== (unit !== undefined)) {
+    return res.status(400).json({ error: "quantity and unit must be provided together, or not at all" });
+  }
+  if (quantity !== undefined && quantity <= 0) return res.status(400).json({ error: "quantity must be positive" });
+  if (unit !== undefined && !isValidUnit(unit)) return res.status(400).json({ error: "unrecognized unit" });
+
+  const existing = await Purchase.findOne({ idempotencyKey });
+  if (existing) return res.status(200).json(existing);
 
   const project = await Project.findOne({ _id: projectId, deletedAt: null });
   if (!project) return res.status(404).json({ error: "project not found" });
 
-  const purchase = await Purchase.create({
-    projectId,
-    amount,
-    description: description.trim(),
-    createdBy: req.user!.id,
-  });
+  let purchase;
+  try {
+    purchase = await Purchase.create({
+      projectId,
+      amount,
+      description: description.trim(),
+      quantity: quantity ?? null,
+      unit: unit ?? null,
+      vendor: vendor?.trim() || null,
+      category: category?.trim() || null,
+      notes: notes?.trim() || null,
+      idempotencyKey,
+      createdBy: req.user!.id,
+    });
+  } catch (err) {
+    // Lost the race against a near-simultaneous duplicate request with the
+    // same key — the unique index rejected us, so fetch and return what
+    // the other request actually created rather than erroring.
+    if ((err as { code?: number }).code === 11000) {
+      const winner = await Purchase.findOne({ idempotencyKey });
+      if (winner) return res.status(200).json(winner);
+    }
+    throw err;
+  }
 
   await logActivity(req, {
     action: "purchase.create",
     entityType: "purchase",
     entityId: purchase._id,
-    after: { projectId, amount: purchase.amount, description: purchase.description },
+    after: { projectId, amount: purchase.amount, description: purchase.description, quantity: purchase.quantity, unit: purchase.unit },
   });
 
   res.status(201).json(purchase);
@@ -76,15 +116,46 @@ purchasesRouter.get("/recent", async (req, res) => {
 // Only owner/admin can correct or remove a logged purchase — always
 // soft-deleted, so the original figure is never actually gone.
 purchasesRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
-  const { amount, description } = req.body as { amount?: number; description?: string };
+  const { amount, description, quantity, unit, vendor, category, notes } = req.body as {
+    amount?: number;
+    description?: string;
+    quantity?: number | null;
+    unit?: string | null;
+    vendor?: string | null;
+    category?: string | null;
+    notes?: string | null;
+  };
   if (amount !== undefined && amount <= 0) return res.status(400).json({ error: "amount must be positive" });
 
   const purchase = await Purchase.findOne({ _id: req.params.id, deletedAt: null });
   if (!purchase) return res.status(404).json({ error: "purchase not found" });
 
-  const before = { amount: purchase.amount, description: purchase.description };
+  // quantity/unit are a pair on the resulting document, not just this
+  // request's body — check the values that would actually end up saved.
+  const nextQuantity = quantity !== undefined ? quantity : purchase.quantity;
+  const nextUnit = unit !== undefined ? unit : purchase.unit;
+  if ((nextQuantity === null) !== (nextUnit === null)) {
+    return res.status(400).json({ error: "quantity and unit must be provided together, or not at all" });
+  }
+  if (nextQuantity !== null && nextQuantity <= 0) return res.status(400).json({ error: "quantity must be positive" });
+  if (nextUnit !== null && !isValidUnit(nextUnit)) return res.status(400).json({ error: "unrecognized unit" });
+
+  const before = {
+    amount: purchase.amount,
+    description: purchase.description,
+    quantity: purchase.quantity,
+    unit: purchase.unit,
+    vendor: purchase.vendor,
+    category: purchase.category,
+    notes: purchase.notes,
+  };
   if (amount !== undefined) purchase.amount = amount;
   if (description?.trim()) purchase.description = description.trim();
+  if (quantity !== undefined) purchase.quantity = quantity;
+  if (unit !== undefined) purchase.unit = unit;
+  if (vendor !== undefined) purchase.vendor = vendor?.trim() || null;
+  if (category !== undefined) purchase.category = category?.trim() || null;
+  if (notes !== undefined) purchase.notes = notes?.trim() || null;
   purchase.editedBy = req.user!.id;
   purchase.editedAt = new Date();
   await purchase.save();
@@ -94,7 +165,15 @@ purchasesRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedR
     entityType: "purchase",
     entityId: purchase._id,
     before,
-    after: { amount: purchase.amount, description: purchase.description },
+    after: {
+      amount: purchase.amount,
+      description: purchase.description,
+      quantity: purchase.quantity,
+      unit: purchase.unit,
+      vendor: purchase.vendor,
+      category: purchase.category,
+      notes: purchase.notes,
+    },
   });
 
   res.json(purchase);
@@ -147,7 +226,12 @@ purchasesRouter.get("/export", requireRole("owner", "admin", "analyst"), async (
   const rows = purchases.map((p) => ({
     project: (p.projectId as unknown as { name: string })?.name ?? "unknown",
     amount: p.amount,
+    quantity: p.quantity ?? "",
+    unit: p.unit ?? "",
     description: p.description,
+    vendor: p.vendor ?? "",
+    category: p.category ?? "",
+    notes: p.notes ?? "",
     loggedBy: (p.createdBy as unknown as { name: string })?.name ?? "unknown",
     purchasedAt: p.purchasedAt.toISOString(),
   }));
@@ -159,7 +243,12 @@ purchasesRouter.get("/export", requireRole("owner", "admin", "analyst"), async (
   purchaseSheet.columns = [
     { header: "Project", key: "project", width: 28 },
     { header: "Amount", key: "amount", width: 14, style: { numFmt: "#,##0.00" } },
+    { header: "Quantity", key: "quantity", width: 12 },
+    { header: "Unit", key: "unit", width: 10 },
     { header: "Description", key: "description", width: 40 },
+    { header: "Vendor", key: "vendor", width: 22 },
+    { header: "Category", key: "category", width: 18 },
+    { header: "Notes", key: "notes", width: 30 },
     { header: "Logged By", key: "loggedBy", width: 22 },
     { header: "Purchased At", key: "purchasedAt", width: 22 },
   ];
@@ -222,7 +311,10 @@ function buildDateFilter(from: unknown, to: unknown): Record<string, Date> {
 }
 
 function sendCsv(res: import("express").Response, filename: string, rows: Record<string, string | number>[]) {
-  const headers = rows.length > 0 ? Object.keys(rows[0]) : ["project", "amount", "description", "loggedBy", "purchasedAt"];
+  const headers =
+    rows.length > 0
+      ? Object.keys(rows[0])
+      : ["project", "amount", "quantity", "unit", "description", "vendor", "category", "notes", "loggedBy", "purchasedAt"];
   const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
   const csv = [headers.join(","), ...rows.map((row) => headers.map((h) => escape(row[h])).join(","))].join("\n");
 
