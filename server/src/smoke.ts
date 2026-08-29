@@ -161,6 +161,15 @@ async function main() {
   assert(purchase.status === 201, "member logs a purchase");
   const purchaseId = purchase.body._id;
 
+  // The project list's aggregated totalSpent must reflect real purchases —
+  // this specifically regression-tests a bug where the totals aggregation
+  // silently matched nothing (Purchase.projectId is a string, Project._id
+  // is an ObjectId, and .aggregate() doesn't auto-cast between them the
+  // way .find() does).
+  const projectsWithTotal = await req("/projects", {}, adminToken0);
+  const warehouseProject = (projectsWithTotal.body.items as { _id: string; totalSpent: number }[]).find((p) => p._id === projectId);
+  assert(warehouseProject?.totalSpent === 250.5, "project list's totalSpent reflects an actual logged purchase, not just 0");
+
   // Member tries to edit/delete their own purchase -> forbidden.
   const memberEdit = await req("/purchases/" + purchaseId, { method: "PATCH", body: JSON.stringify({ amount: 1 }) }, memberToken0);
   assert(memberEdit.status === 403, "member cannot edit their own purchase");

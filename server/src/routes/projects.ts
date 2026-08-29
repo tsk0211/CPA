@@ -21,14 +21,19 @@ projectsRouter.get("/", async (req, res) => {
 
   // One aggregate query for all totals on this page, not one query per
   // project — avoids an N+1 as the project count grows.
-  const projectIds = projects.map((p) => p._id);
+  //
+  // Purchase.projectId is stored as a plain string (see models/Purchase.ts)
+  // while Project._id is a real ObjectId — .find()/.findOne() cast between
+  // the two automatically, but .aggregate() does NOT, so the $in below
+  // silently matches nothing unless projectIds are stringified first.
+  const projectIds = projects.map((p) => p._id.toString());
   const sums = await Purchase.aggregate<{ _id: string; total: number }>([
     { $match: { projectId: { $in: projectIds }, deletedAt: null } },
     { $group: { _id: "$projectId", total: { $sum: "$amount" } } },
   ]);
   const totalByProject = new Map(sums.map((s) => [s._id, s.total]));
 
-  const items = projects.map((p) => ({ ...p.toObject(), totalSpent: totalByProject.get(p._id) ?? 0 }));
+  const items = projects.map((p) => ({ ...p.toObject(), totalSpent: totalByProject.get(p._id.toString()) ?? 0 }));
   res.json(toPagedResult(items, total, pageParams));
 });
 
