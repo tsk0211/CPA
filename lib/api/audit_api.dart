@@ -10,8 +10,8 @@ class AuditApi {
     final json = await client.get("/audit-log", query: {
       "page": "$page",
       "limit": "$limit",
-      if (projectId != null) "projectId": projectId,
-      if (action != null) "action": action,
+      "projectId": ?projectId,
+      "action": ?action,
     });
     return Paged.fromJson(json, AuditEntry.fromJson);
   }

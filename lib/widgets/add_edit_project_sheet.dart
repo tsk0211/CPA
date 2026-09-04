@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/project.dart';
 import 'emoji_picker_grid.dart';
+import 'sheet_padding.dart';
 
 /// Returns (name, icon) if saved, null if cancelled.
 Future<(String, String)?> showAddEditProjectSheet(BuildContext context, {Project? existing}) {
@@ -38,7 +39,7 @@ class _AddEditProjectSheetState extends State<_AddEditProjectSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+      padding: sheetPadding(context),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

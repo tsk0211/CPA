@@ -1,3 +1,10 @@
+// Must be imported before any router below is defined — it patches
+// Express's Router methods so a rejected promise inside an async handler
+// (e.g. a Mongoose CastError from a malformed :id) is forwarded to the
+// error-handling middleware instead of becoming an unhandled rejection
+// that crashes the whole process (Express 4 doesn't catch these itself).
+import "express-async-errors";
+
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -36,6 +43,17 @@ export function createApp() {
   app.use("/purchases", purchasesRouter);
   app.use("/users", usersRouter);
   app.use("/audit-log", auditLogRouter);
+
+  // Last resort: turns a thrown/rejected error from any route into a JSON
+  // response instead of an unhandled rejection. A malformed :id (client
+  // typo'd link, stale cache) is a CastError and is the client's fault, not
+  // a server failure — reported as 400 rather than a generic 500.
+  const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
+    if (err?.name === "CastError") return void res.status(400).json({ error: "invalid id" });
+    console.error(err);
+    res.status(500).json({ error: "internal server error" });
+  };
+  app.use(errorHandler);
 
   return app;
 }

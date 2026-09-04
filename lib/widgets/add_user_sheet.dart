@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_exception.dart';
 import '../models/role.dart';
 import '../state/app_scope.dart';
+import 'sheet_padding.dart';
 
 /// Returns true if a new account was created.
 Future<bool?> showAddUserSheet(BuildContext context, {required bool canCreateAdmin}) {
@@ -68,7 +69,7 @@ class _AddUserSheetState extends State<_AddUserSheet> {
     final assignableRoles = [Role.member, Role.analyst, if (widget.canCreateAdmin) Role.admin];
 
     return Padding(
-      padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+      padding: sheetPadding(context),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -15,6 +15,11 @@ class ProjectsApi {
     return Paged.fromJson(json, Project.fromJson);
   }
 
+  Future<Project> get(String id) async {
+    final json = await client.get("/projects/$id");
+    return Project.fromJson(json);
+  }
+
   Future<Project> create(String name, String icon) async {
     final json = await client.post("/projects", {"name": name, "icon": icon});
     return Project.fromJson(json);

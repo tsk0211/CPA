@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/audit_entry.dart';
+import 'detail_row.dart';
 
 const _actionLabels = {
   "project.create": "created project",
@@ -24,7 +25,7 @@ class AuditEntryTile extends StatelessWidget {
     final label = _actionLabels[entry.action] ?? entry.action;
     final hasDiff = entry.before != null || entry.after != null;
 
-    return ExpansionTile(
+    return ListTile(
       leading: CircleAvatar(child: Text(entry.actorName.isNotEmpty ? entry.actorName[0].toUpperCase() : "?")),
       title: RichText(
         text: TextSpan(
@@ -36,35 +37,59 @@ class AuditEntryTile extends StatelessWidget {
         ),
       ),
       subtitle: Text(DateFormat.yMMMEd().add_jm().format(entry.createdAt)),
-      children: hasDiff
-          ? [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (entry.before != null) _DiffRow(label: "Before", data: entry.before!),
-                    if (entry.after != null) _DiffRow(label: "After", data: entry.after!),
-                  ],
-                ),
-              ),
-            ]
-          : const [],
+      trailing: hasDiff ? const Icon(Icons.chevron_right) : null,
+      onTap: hasDiff ? () => _showDetails(context, label) : null,
+    );
+  }
+
+  // A dedicated, view-only dialog reads far better than cramming
+  // before/after fields into an inline-expanding tile — each field gets its
+  // own line instead of one long comma-joined string.
+  void _showDetails(BuildContext context, String label) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text("${entry.actorName} $label"),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(DateFormat.yMMMEd().add_jm().format(entry.createdAt), style: Theme.of(dialogContext).textTheme.bodySmall),
+                if (entry.before != null) ...[
+                  const SizedBox(height: 16),
+                  _DiffSection(label: "Before", data: entry.before!),
+                ],
+                if (entry.after != null) ...[
+                  const SizedBox(height: 16),
+                  _DiffSection(label: "After", data: entry.after!),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text("Close"))],
+      ),
     );
   }
 }
 
-class _DiffRow extends StatelessWidget {
+class _DiffSection extends StatelessWidget {
   final String label;
   final Map<String, dynamic> data;
-  const _DiffRow({required this.label, required this.data});
+  const _DiffSection({required this.label, required this.data});
 
   @override
   Widget build(BuildContext context) {
-    final text = data.entries.map((e) => "${e.key}: ${e.value}").join(", ");
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Text("$label — $text", style: Theme.of(context).textTheme.bodySmall),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        for (final e in data.entries) DetailRow(label: e.key, value: "${e.value}"),
+      ],
     );
   }
 }

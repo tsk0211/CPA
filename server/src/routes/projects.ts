@@ -9,6 +9,18 @@ export const projectsRouter = Router();
 
 projectsRouter.use(requireAuth, blockIfMustChangePassword);
 
+// Purchase.projectId is stored as a plain string (see models/Purchase.ts)
+// while Project._id is a real ObjectId — .find()/.findOne() cast between
+// the two automatically, but .aggregate() does NOT, so ids must be
+// stringified before being used in a $match/$in here.
+async function totalsByProjectId(projectIds: string[]): Promise<Map<string, number>> {
+  const sums = await Purchase.aggregate<{ _id: string; total: number }>([
+    { $match: { projectId: { $in: projectIds }, deletedAt: null } },
+    { $group: { _id: "$projectId", total: { $sum: "$amount" } } },
+  ]);
+  return new Map(sums.map((s) => [s._id, s.total]));
+}
+
 // Any authenticated, active role can read. Paginated + searchable by name —
 // this list is expected to grow to 100+ projects, so it was never safe to
 // just return everything unbounded.
@@ -21,20 +33,21 @@ projectsRouter.get("/", async (req, res) => {
 
   // One aggregate query for all totals on this page, not one query per
   // project — avoids an N+1 as the project count grows.
-  //
-  // Purchase.projectId is stored as a plain string (see models/Purchase.ts)
-  // while Project._id is a real ObjectId — .find()/.findOne() cast between
-  // the two automatically, but .aggregate() does NOT, so the $in below
-  // silently matches nothing unless projectIds are stringified first.
-  const projectIds = projects.map((p) => p._id.toString());
-  const sums = await Purchase.aggregate<{ _id: string; total: number }>([
-    { $match: { projectId: { $in: projectIds }, deletedAt: null } },
-    { $group: { _id: "$projectId", total: { $sum: "$amount" } } },
-  ]);
-  const totalByProject = new Map(sums.map((s) => [s._id, s.total]));
+  const totalByProject = await totalsByProjectId(projects.map((p) => p._id.toString()));
 
   const items = projects.map((p) => ({ ...p.toObject(), totalSpent: totalByProject.get(p._id.toString()) ?? 0 }));
   res.json(toPagedResult(items, total, pageParams));
+});
+
+// Single project with its current total — the client refetches this after
+// any purchase create/edit/delete so "Total spent" on the detail screen
+// never drifts from what was passed in when the screen was opened.
+projectsRouter.get("/:id", async (req, res) => {
+  const project = await Project.findOne({ _id: req.params.id, deletedAt: null });
+  if (!project) return res.status(404).json({ error: "project not found" });
+
+  const totalByProject = await totalsByProjectId([project._id.toString()]);
+  res.json({ ...project.toObject(), totalSpent: totalByProject.get(project._id.toString()) ?? 0 });
 });
 
 // Only owner/admin can create, rename, or delete projects.

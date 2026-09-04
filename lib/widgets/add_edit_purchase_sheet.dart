@@ -5,6 +5,7 @@ import '../models/purchase.dart';
 import '../models/units.dart';
 import '../offline/pending_purchase.dart';
 import '../state/app_scope.dart';
+import 'sheet_padding.dart';
 
 /// Returns true if something changed (created, queued offline, or edited).
 Future<bool?> showAddEditPurchaseSheet(
@@ -148,7 +149,7 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+      padding: sheetPadding(context),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -152,6 +152,14 @@ async function main() {
   assert(project.status === 201, "admin creates a project");
   const projectId = project.body._id;
 
+  // A malformed id must fail cleanly (400), not crash the process — a
+  // Mongoose CastError thrown inside an async handler is an unhandled
+  // rejection unless caught, and previously took the whole server down.
+  const malformedGet = await req("/projects/not-a-valid-object-id", {}, adminToken0);
+  assert(malformedGet.status === 400, "GET /projects/:id with a malformed id returns 400, not a crash");
+  const stillAlive = await req("/health", {});
+  assert(stillAlive.status === 200, "server is still up after the malformed-id request");
+
   // Member adds a purchase, with quantity/unit/vendor/category/notes.
   const purchaseKey = "idem-key-concrete-mix-1";
   const purchase = await req(
@@ -241,6 +249,24 @@ async function main() {
 
   const projectPurchasesAfterDelete = await req(`/purchases/project/${projectId}`, {}, adminToken0);
   assert(projectPurchasesAfterDelete.body.items.length === 0, "soft-deleted purchase no longer appears in project purchase list");
+
+  // A deleted purchase must also drop out of the project's totalSpent —
+  // both the list endpoint's aggregation and the single-project GET the
+  // client refetches after any purchase change.
+  const projectsAfterDelete = await req("/projects", {}, adminToken0);
+  const warehouseAfterDelete = (projectsAfterDelete.body.items as { _id: string; totalSpent: number }[]).find((p) => p._id === projectId);
+  assert(warehouseAfterDelete?.totalSpent === 0, "deleting a purchase subtracts it from the project list's totalSpent");
+  const projectByIdAfterDelete = await req(`/projects/${projectId}`, {}, adminToken0);
+  assert(projectByIdAfterDelete.body.totalSpent === 0, "deleting a purchase subtracts it from GET /projects/:id totalSpent too");
+
+  // --- Reports preview: paginated, same filters as export ---
+
+  const previewAll = await req("/purchases/search", {}, analystToken0);
+  assert(previewAll.status === 200 && Array.isArray(previewAll.body.items) && typeof previewAll.body.totalAmount === "number", "analyst can preview matching purchases before exporting");
+  const previewScoped = await req(`/purchases/search?projectIds=${projectId}`, {}, analystToken0);
+  assert(previewScoped.body.items.length === 0 && previewScoped.body.totalAmount === 0, "preview for the now-empty project reflects the soft-deleted purchase too");
+  const previewForbidden = await req("/purchases/search", {}, memberToken0);
+  assert(previewForbidden.status === 403, "member cannot preview reports (view+export only for analyst/admin/owner)");
 
   // --- Export: csv, xlsx, xlsx+audit-trail ---
 

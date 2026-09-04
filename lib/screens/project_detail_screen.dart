@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../api/api_exception.dart';
 import '../models/audit_entry.dart';
 import '../models/project.dart';
 import '../models/purchase.dart';
@@ -23,6 +24,7 @@ class ProjectDetailScreen extends StatefulWidget {
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTickerProviderStateMixin {
   late Project _project = widget.project;
   TabController? _tabController;
+  final _purchasesTabKey = GlobalKey<_PurchasesTabState>();
 
   @override
   void didChangeDependencies() {
@@ -47,9 +49,30 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
     final scope = AppScope.of(context);
     final result = await showAddEditProjectSheet(context, existing: _project);
     if (result == null) return;
-    final updated = await scope.projects.update(_project.id, result.$1, result.$2);
-    if (!mounted) return;
-    setState(() => _project = updated);
+    await scope.projects.update(_project.id, result.$1, result.$2);
+    await _refreshProject();
+  }
+
+  // Re-fetches the project so "Total spent" reflects the current server
+  // total — the project passed into this screen is a snapshot from the
+  // list, and purchase creates/edits/deletes never update it in place.
+  //
+  // Failures here are swallowed into a snackbar rather than rethrown: the
+  // purchase/project change that triggered this refresh already succeeded,
+  // so a stale total is a cosmetic problem, not one worth surfacing as a
+  // hard error over.
+  Future<void> _refreshProject() async {
+    try {
+      final updated = await AppScope.of(context).projects.get(_project.id);
+      if (!mounted) return;
+      setState(() => _project = updated);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't refresh totals: ${e.message}")));
+    } on NetworkUnavailableException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Couldn't refresh totals — no connection.")));
+    }
   }
 
   @override
@@ -67,7 +90,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
               Hero(tag: 'project-icon-${_project.id}', child: Text(_project.icon)),
               const SizedBox(width: 8),
               Flexible(child: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-              if (role.canManageProjects) const Icon(Icons.edit, size: 16),
+              if (role.canManageProjects) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.edit, size: 16),
+              ],
             ],
           ),
         ),
@@ -111,11 +137,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
                   ? TabBarView(
                       controller: _tabController,
                       children: [
-                        _PurchasesTab(project: _project),
+                        _PurchasesTab(key: _purchasesTabKey, project: _project, onChanged: _refreshProject),
                         _ActivityTab(projectId: _project.id),
                       ],
                     )
-                  : _PurchasesTab(project: _project),
+                  : _PurchasesTab(key: _purchasesTabKey, project: _project, onChanged: _refreshProject),
             ),
           ],
         ),
@@ -126,7 +152,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
               label: const Text("Purchase"),
               onPressed: () async {
                 final changed = await showAddEditPurchaseSheet(context, projectId: _project.id, projectName: _project.name);
-                if (changed == true) setState(() {});
+                if (changed == true) {
+                  await _refreshProject();
+                  _purchasesTabKey.currentState?.refresh();
+                }
               },
             )
           : null,
@@ -136,7 +165,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
 
 class _PurchasesTab extends StatefulWidget {
   final Project project;
-  const _PurchasesTab({required this.project});
+  final VoidCallback onChanged;
+  const _PurchasesTab({super.key, required this.project, required this.onChanged});
 
   @override
   State<_PurchasesTab> createState() => _PurchasesTabState();
@@ -179,6 +209,12 @@ class _PurchasesTabState extends State<_PurchasesTab> {
     super.dispose();
   }
 
+  // Exposed so the parent screen's "add purchase" FAB — which lives outside
+  // this tab and has no other way to reach its list state — can reload the
+  // list after a create, the same way _editPurchase/_deletePurchase already
+  // do for themselves below.
+  void refresh() => _loadFirstPage();
+
   Future<void> _loadFirstPage() async {
     setState(() {
       _loading = true;
@@ -219,12 +255,16 @@ class _PurchasesTabState extends State<_PurchasesTab> {
 
   Future<void> _editPurchase(Purchase purchase) async {
     final changed = await showAddEditPurchaseSheet(context, projectId: widget.project.id, projectName: widget.project.name, existing: purchase);
-    if (changed == true) _loadFirstPage();
+    if (changed == true) {
+      _loadFirstPage();
+      widget.onChanged();
+    }
   }
 
   Future<void> _deletePurchase(Purchase purchase) async {
     await AppScope.of(context).purchases.delete(purchase.id);
     _loadFirstPage();
+    widget.onChanged();
   }
 
   @override

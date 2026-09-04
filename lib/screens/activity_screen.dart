@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../widgets/detail_row.dart';
 import '../widgets/responsive_center.dart';
 
 class ActivityScreen extends StatefulWidget {
@@ -105,6 +106,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  onTap: () => _showDetails(context, purchase, currency),
                 );
               }
               if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
@@ -113,6 +115,38 @@ class _ActivityScreenState extends State<ActivityScreen> {
             },
           ),
         ),
+      ),
+    );
+  }
+
+  // The list row truncates to one line to stay scannable — this is where
+  // the full record (vendor/category/notes included) actually lives.
+  void _showDetails(BuildContext context, Purchase purchase, NumberFormat currency) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(purchase.description),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DetailRow(label: "Amount", value: currency.format(purchase.amount)),
+                if (purchase.projectName != null) DetailRow(label: "Project", value: purchase.projectName!),
+                if (purchase.quantity != null) DetailRow(label: "Quantity", value: "${purchase.quantity} ${purchase.unit}"),
+                if (purchase.vendor != null) DetailRow(label: "Vendor", value: purchase.vendor!),
+                if (purchase.category != null) DetailRow(label: "Category", value: purchase.category!),
+                if (purchase.notes != null) DetailRow(label: "Notes", value: purchase.notes!),
+                if (purchase.createdByName != null) DetailRow(label: "Logged by", value: purchase.createdByName!),
+                DetailRow(label: "Purchased at", value: DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt)),
+                if (purchase.editedAt != null) DetailRow(label: "Edited at", value: DateFormat.yMMMEd().add_jm().format(purchase.editedAt!)),
+              ],
+            ),
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text("Close"))],
       ),
     );
   }

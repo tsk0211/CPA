@@ -197,6 +197,44 @@ purchasesRouter.delete("/:id", requireRole("owner", "admin"), async (req: Authed
   res.status(204).end();
 });
 
+// Shared by /search and /export so the two can never drift apart on what
+// "matching these filters" means — a preview that doesn't actually match
+// what gets exported would defeat the point of previewing.
+function parseProjectIds(raw: unknown): string[] | null {
+  return typeof raw === "string" && raw.length > 0 ? raw.split(",") : null;
+}
+
+function buildPurchaseFilter(projectIds: string[] | null, dateFilter: Record<string, Date>) {
+  return {
+    deletedAt: null,
+    ...(projectIds ? { projectId: { $in: projectIds } } : {}),
+    ...(Object.keys(dateFilter).length ? { purchasedAt: dateFilter } : {}),
+  };
+}
+
+// Paginated preview of what a report export would contain — same filters
+// (projectIds/from/to) as /export, so the user can page through and check
+// the scope before committing to generating and sharing a file.
+purchasesRouter.get("/search", requireRole("owner", "admin", "analyst"), async (req, res) => {
+  const pageParams = parsePageParams(req);
+  const projectIds = parseProjectIds(req.query.projectIds);
+  const dateFilter = buildDateFilter(req.query.from, req.query.to);
+  const filter = buildPurchaseFilter(projectIds, dateFilter);
+
+  const [total, purchases, totalAmountAgg] = await Promise.all([
+    Purchase.countDocuments(filter),
+    Purchase.find(filter)
+      .populate("projectId", "name icon")
+      .populate("createdBy", "name")
+      .sort({ purchasedAt: -1 })
+      .skip(pageParams.skip)
+      .limit(pageParams.limit),
+    Purchase.aggregate<{ _id: null; total: number }>([{ $match: filter }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+  ]);
+
+  res.json({ ...toPagedResult(purchases, total, pageParams), totalAmount: totalAmountAgg[0]?.total ?? 0 });
+});
+
 // --- Reports export (owner, admin, analyst) ---
 //
 // GET /purchases/export?format=csv|xlsx&projectIds=id1,id2&from=ISO&to=ISO&includeAuditTrail=true
@@ -207,18 +245,16 @@ purchasesRouter.delete("/:id", requireRole("owner", "admin"), async (req: Authed
 //   erroring — the client disables the toggle when csv is selected.
 purchasesRouter.get("/export", requireRole("owner", "admin", "analyst"), async (req, res) => {
   const format = req.query.format === "xlsx" ? "xlsx" : "csv";
-  const projectIds = typeof req.query.projectIds === "string" && req.query.projectIds.length > 0 ? req.query.projectIds.split(",") : null;
+  const projectIds = parseProjectIds(req.query.projectIds);
   const dateFilter = buildDateFilter(req.query.from, req.query.to);
   const includeAuditTrail = format === "xlsx" && req.query.includeAuditTrail === "true";
 
+  // Resolved to a concrete list (not left null/unconstrained) because the
+  // audit-trail sheet below needs real project ids to scope its own query.
   const targetProjectIds =
     projectIds ?? (await Project.find({ deletedAt: null }).distinct("_id"));
 
-  const purchases = await Purchase.find({
-    projectId: { $in: targetProjectIds },
-    deletedAt: null,
-    ...(Object.keys(dateFilter).length ? { purchasedAt: dateFilter } : {}),
-  })
+  const purchases = await Purchase.find(buildPurchaseFilter(targetProjectIds, dateFilter))
     .populate("projectId", "name")
     .populate("createdBy", "name")
     .sort({ purchasedAt: -1 });
