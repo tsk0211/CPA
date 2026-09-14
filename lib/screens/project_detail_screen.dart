@@ -11,7 +11,10 @@ import '../state/app_scope.dart';
 import '../widgets/add_edit_project_sheet.dart';
 import '../widgets/add_edit_purchase_sheet.dart';
 import '../widgets/audit_entry_tile.dart';
+import '../widgets/breakpoints.dart';
+import '../widgets/reject_reason_dialog.dart';
 import '../widgets/responsive_center.dart';
+import '../widgets/status_badge.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
   final Project project;
@@ -102,6 +105,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
             : null,
       ),
       body: ResponsiveCenter(
+        maxWidth: isDesktop(context) ? 1000 : 720,
         child: Column(
           children: [
             Padding(
@@ -267,6 +271,20 @@ class _PurchasesTabState extends State<_PurchasesTab> {
     widget.onChanged();
   }
 
+  Future<void> _approvePurchase(Purchase purchase) async {
+    await AppScope.of(context).purchases.approve(purchase.id);
+    _loadFirstPage();
+    widget.onChanged();
+  }
+
+  Future<void> _rejectPurchase(Purchase purchase) async {
+    final reason = await askRejectionReason(context, purchase.description);
+    if (reason == null || !mounted) return;
+    await AppScope.of(context).purchases.reject(purchase.id, reason);
+    _loadFirstPage();
+    widget.onChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
@@ -303,19 +321,42 @@ class _PurchasesTabState extends State<_PurchasesTab> {
                 final itemIndex = index - pendingForProject.length;
                 if (itemIndex < _items.length) {
                   final purchase = _items[itemIndex];
+                  final canReviewThis = role.canReviewPurchases && purchase.status == PurchaseStatus.pending;
                   final tile = ListTile(
-                    title: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Row(
+                      children: [
+                        Flexible(child: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        if (purchase.status != PurchaseStatus.approved) ...[
+                          const SizedBox(width: 6),
+                          StatusBadge(status: purchase.status),
+                        ],
+                      ],
+                    ),
                     subtitle: Text(
                       [
                         if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
                         if (purchase.vendor != null) purchase.vendor!,
                         DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
                         if (purchase.editedAt != null) "edited",
+                        if (purchase.status == PurchaseStatus.rejected && purchase.rejectionReason != null) "reason: ${purchase.rejectionReason}",
                       ].join(" · "),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    trailing: canReviewThis
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                tooltip: "Reject",
+                                color: Theme.of(context).colorScheme.error,
+                                onPressed: () => _rejectPurchase(purchase),
+                              ),
+                              IconButton(icon: const Icon(Icons.check), tooltip: "Approve", onPressed: () => _approvePurchase(purchase)),
+                            ],
+                          )
+                        : Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
                   );
                   if (!role.canEditPurchases) return tile;
                   return Dismissible(

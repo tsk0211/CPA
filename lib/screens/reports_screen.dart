@@ -9,6 +9,7 @@ import '../api/api_exception.dart';
 import '../models/project.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../widgets/breakpoints.dart';
 import '../widgets/project_multi_select_sheet.dart';
 import '../widgets/responsive_center.dart';
 
@@ -177,6 +178,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text("Reports")),
       body: ResponsiveCenter(
+        maxWidth: isDesktop(context) ? 900 : 720,
         child: ListView(
         padding: const EdgeInsets.all(16),
         children: [

@@ -1,3 +1,11 @@
+enum PurchaseStatus {
+  pending,
+  approved,
+  rejected;
+
+  static PurchaseStatus parse(String? raw) => PurchaseStatus.values.firstWhere((s) => s.name == raw, orElse: () => PurchaseStatus.approved);
+}
+
 class Purchase {
   final String id;
   final String projectId;
@@ -14,6 +22,8 @@ class Purchase {
   final String? createdByName;
   final DateTime purchasedAt;
   final DateTime? editedAt;
+  final PurchaseStatus status;
+  final String? rejectionReason;
 
   Purchase({
     required this.id,
@@ -31,6 +41,8 @@ class Purchase {
     this.createdByName,
     required this.purchasedAt,
     this.editedAt,
+    this.status = PurchaseStatus.approved,
+    this.rejectionReason,
   });
 
   // projectId/createdBy come back as plain string ids from
@@ -56,6 +68,8 @@ class Purchase {
       createdByName: rawCreatedBy is Map ? rawCreatedBy["name"] as String? : null,
       purchasedAt: DateTime.parse(json["purchasedAt"] as String),
       editedAt: json["editedAt"] != null ? DateTime.parse(json["editedAt"] as String) : null,
+      status: PurchaseStatus.parse(json["status"] as String?),
+      rejectionReason: json["rejectionReason"] as String?,
     );
   }
 }

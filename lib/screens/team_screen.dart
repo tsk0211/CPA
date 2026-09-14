@@ -8,6 +8,7 @@ import '../models/user.dart';
 import '../state/app_scope.dart';
 import '../widgets/add_user_sheet.dart';
 import '../widgets/audit_entry_tile.dart';
+import '../widgets/breakpoints.dart';
 import '../widgets/responsive_center.dart';
 import '../widgets/role_badge.dart';
 
@@ -29,6 +30,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
       return Scaffold(
         appBar: AppBar(title: const Text("Team"), bottom: TabBar(controller: _tabController, tabs: const [Tab(text: "Users"), Tab(text: "Activity")])),
         body: ResponsiveCenter(
+          maxWidth: isDesktop(context) ? 1100 : 720,
           child: TabBarView(controller: _tabController, children: const [_UsersTab(), _GlobalActivityTab()]),
         ),
       );
@@ -36,7 +38,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     // Analyst: Team screen exists but only the Activity segment is usable.
     return Scaffold(
       appBar: AppBar(title: const Text("Team")),
-      body: const ResponsiveCenter(child: _GlobalActivityTab()),
+      body: ResponsiveCenter(maxWidth: isDesktop(context) ? 1100 : 720, child: const _GlobalActivityTab()),
     );
   }
 
@@ -158,33 +160,77 @@ class _UsersTabState extends State<_UsersTab> {
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _searchController,
-            decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: "Search team…", isDense: true),
-            onChanged: _onSearchChanged,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: "Search team…", isDense: true),
+                  onChanged: _onSearchChanged,
+                ),
+              ),
+              if (isDesktop(context)) ...[
+                const SizedBox(width: 12),
+                FilledButton.icon(onPressed: _addUser, icon: const Icon(Icons.person_add_alt), label: const Text("New account")),
+              ],
+            ],
           ),
         ),
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  itemCount: _items.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == _items.length) {
-                      return ListTile(leading: const Icon(Icons.person_add_alt), title: const Text("New account"), onTap: _addUser);
-                    }
-                    final member = _items[index];
-                    return ListTile(
-                      leading: CircleAvatar(child: Text(member.name.isNotEmpty ? member.name[0].toUpperCase() : "?")),
-                      title: Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(member.email, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      trailing: RoleBadge(role: member.role),
-                      onTap: () => _showUserActions(member),
-                    );
-                  },
-                ),
+              : isDesktop(context)
+                  ? _buildDesktopTable(context)
+                  : _buildList(context),
         ),
       ],
+    );
+  }
+
+  Widget _buildList(BuildContext context) {
+    return ListView.builder(
+      itemCount: _items.length + 1,
+      itemBuilder: (context, index) {
+        if (index == _items.length) {
+          return ListTile(leading: const Icon(Icons.person_add_alt), title: const Text("New account"), onTap: _addUser);
+        }
+        final member = _items[index];
+        return ListTile(
+          leading: CircleAvatar(child: Text(member.name.isNotEmpty ? member.name[0].toUpperCase() : "?")),
+          title: Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text(member.email, maxLines: 1, overflow: TextOverflow.ellipsis),
+          trailing: RoleBadge(role: member.role),
+          onTap: () => _showUserActions(member),
+        );
+      },
+    );
+  }
+
+  Widget _buildDesktopTable(BuildContext context) {
+    if (_items.isEmpty) return const Center(child: Text("No team members yet."));
+    return SingleChildScrollView(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: const [
+            DataColumn(label: Text("Name")),
+            DataColumn(label: Text("Email")),
+            DataColumn(label: Text("Role")),
+            DataColumn(label: Text("")),
+          ],
+          rows: [
+            for (final member in _items)
+              DataRow(
+                cells: [
+                  DataCell(Text(member.name)),
+                  DataCell(Text(member.email)),
+                  DataCell(RoleBadge(role: member.role)),
+                  DataCell(IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _showUserActions(member))),
+                ],
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

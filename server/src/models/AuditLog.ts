@@ -7,6 +7,8 @@ export type AuditAction =
   | "purchase.create"
   | "purchase.edit"
   | "purchase.delete"
+  | "purchase.approve"
+  | "purchase.reject"
   | "user.create"
   | "user.role_change"
   | "user.deactivate";

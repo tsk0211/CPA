@@ -47,6 +47,11 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
   const project = await Project.findOne({ _id: projectId, deletedAt: null });
   if (!project) return res.status(404).json({ error: "project not found" });
 
+  // Owner/admin can already edit or delete any purchase outright, so making
+  // them review their own entries would just be friction — only a Member's
+  // purchase enters the pending queue for someone else to approve/reject.
+  const autoApprove = req.user!.role === "owner" || req.user!.role === "admin";
+
   let purchase;
   try {
     purchase = await Purchase.create({
@@ -60,6 +65,9 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
       notes: notes?.trim() || null,
       idempotencyKey,
       createdBy: req.user!.id,
+      status: autoApprove ? "approved" : "pending",
+      reviewedBy: autoApprove ? req.user!.id : null,
+      reviewedAt: autoApprove ? new Date() : null,
     });
   } catch (err) {
     // Lost the race against a near-simultaneous duplicate request with the
@@ -80,6 +88,64 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
   });
 
   res.status(201).json(purchase);
+});
+
+// The desktop admin review queue: every pending purchase across all
+// projects, oldest first (fairness — nothing sits unreviewed forever just
+// because newer items keep landing on top). Owner/Admin only, same as the
+// review action itself below.
+purchasesRouter.get("/pending", requireRole("owner", "admin"), async (req, res) => {
+  const pageParams = parsePageParams(req);
+  const filter = { deletedAt: null, status: "pending" };
+
+  const [total, purchases] = await Promise.all([
+    Purchase.countDocuments(filter),
+    Purchase.find(filter)
+      .populate("projectId", "name icon")
+      .populate("createdBy", "name")
+      .sort({ purchasedAt: 1 })
+      .skip(pageParams.skip)
+      .limit(pageParams.limit),
+  ]);
+  res.json(toPagedResult(purchases, total, pageParams));
+});
+
+// Approve or reject a pending purchase. Only owner/admin can act — the same
+// people who could already edit/delete it outright. Approving/rejecting a
+// purchase that isn't currently pending is rejected as a conflict rather
+// than silently re-applied, since that'd usually mean two reviewers acted
+// on the same item at once.
+purchasesRouter.patch("/:id/review", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
+  const { action, reason } = req.body as { action?: string; reason?: string };
+  if (action !== "approve" && action !== "reject") {
+    return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
+  }
+  if (action === "reject" && !reason?.trim()) {
+    return res.status(400).json({ error: "a reason is required to reject a purchase" });
+  }
+
+  const purchase = await Purchase.findOne({ _id: req.params.id, deletedAt: null });
+  if (!purchase) return res.status(404).json({ error: "purchase not found" });
+  if (purchase.status !== "pending") {
+    return res.status(409).json({ error: `already ${purchase.status}` });
+  }
+
+  const before = { status: purchase.status };
+  purchase.status = action === "approve" ? "approved" : "rejected";
+  purchase.reviewedBy = req.user!.id;
+  purchase.reviewedAt = new Date();
+  purchase.rejectionReason = action === "reject" ? reason!.trim() : null;
+  await purchase.save();
+
+  await logActivity(req, {
+    action: action === "approve" ? "purchase.approve" : "purchase.reject",
+    entityType: "purchase",
+    entityId: purchase._id,
+    before,
+    after: { status: purchase.status, reason: purchase.rejectionReason, description: purchase.description, amount: purchase.amount },
+  });
+
+  res.json(purchase);
 });
 
 // Paginated + searchable (by description) — a busy project can accumulate
@@ -204,9 +270,13 @@ function parseProjectIds(raw: unknown): string[] | null {
   return typeof raw === "string" && raw.length > 0 ? raw.split(",") : null;
 }
 
+// Reports (preview + export) are official figures, so they only ever
+// reflect reviewed spend — a pending or rejected purchase doesn't show up
+// here until an Owner/Admin approves it via the review queue.
 function buildPurchaseFilter(projectIds: string[] | null, dateFilter: Record<string, Date>) {
   return {
     deletedAt: null,
+    status: "approved",
     ...(projectIds ? { projectId: { $in: projectIds } } : {}),
     ...(Object.keys(dateFilter).length ? { purchasedAt: dateFilter } : {}),
   };

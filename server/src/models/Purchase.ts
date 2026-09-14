@@ -1,6 +1,8 @@
 import { Schema, model } from "mongoose";
 import { UNITS } from "../units.js";
 
+export type PurchaseStatus = "pending" | "approved" | "rejected";
+
 export interface PurchaseDoc {
   _id: string;
   projectId: string;
@@ -18,6 +20,15 @@ export interface PurchaseDoc {
   editedAt: Date | null;
   deletedAt: Date | null;
   deletedBy: string | null;
+  // Review workflow: a Member's purchase starts "pending" and only counts
+  // toward totals/reports once an Owner/Admin approves it — the desktop
+  // admin review queue is what actions this. Owner/Admin can already
+  // edit/delete anything, so their own entries are auto-approved on
+  // creation rather than making them review themselves.
+  status: PurchaseStatus;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
+  rejectionReason: string | null;
 }
 
 const purchaseSchema = new Schema<PurchaseDoc>({
@@ -39,9 +50,14 @@ const purchaseSchema = new Schema<PurchaseDoc>({
   editedAt: { type: Date, default: null },
   deletedAt: { type: Date, default: null },
   deletedBy: { type: Schema.Types.String, ref: "User", default: null },
+  status: { type: String, enum: ["pending", "approved", "rejected"], required: true, default: "pending" },
+  reviewedBy: { type: Schema.Types.String, ref: "User", default: null },
+  reviewedAt: { type: Date, default: null },
+  rejectionReason: { type: String, default: null, trim: true },
 });
 
 purchaseSchema.index({ projectId: 1, purchasedAt: -1 });
 purchaseSchema.index({ purchasedAt: -1 });
+purchaseSchema.index({ status: 1, purchasedAt: 1 });
 
 export const Purchase = model<PurchaseDoc>("Purchase", purchaseSchema);

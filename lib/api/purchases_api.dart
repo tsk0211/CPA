@@ -76,6 +76,23 @@ class PurchasesApi {
 
   Future<void> delete(String id) => client.delete("/purchases/$id");
 
+  // The desktop admin review queue: every pending purchase across all
+  // projects, oldest first. Owner/Admin only — see server/src/routes/purchases.ts.
+  Future<Paged<Purchase>> pending({int page = 1, int limit = 20}) async {
+    final json = await client.get("/purchases/pending", query: {"page": "$page", "limit": "$limit"});
+    return Paged.fromJson(json, Purchase.fromJson);
+  }
+
+  Future<Purchase> approve(String id) async {
+    final json = await client.patch("/purchases/$id/review", {"action": "approve"});
+    return Purchase.fromJson(json);
+  }
+
+  Future<Purchase> reject(String id, String reason) async {
+    final json = await client.patch("/purchases/$id/review", {"action": "reject", "reason": reason});
+    return Purchase.fromJson(json);
+  }
+
   // Same filters as export(), paginated — lets the Reports screen show what
   // an export would contain before the user commits to generating one.
   Future<(Paged<Purchase> paged, double totalAmount)> search({

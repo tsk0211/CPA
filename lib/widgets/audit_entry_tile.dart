@@ -11,6 +11,8 @@ const _actionLabels = {
   "purchase.create": "logged a purchase",
   "purchase.edit": "edited a purchase",
   "purchase.delete": "deleted a purchase",
+  "purchase.approve": "approved a purchase",
+  "purchase.reject": "rejected a purchase",
   "user.create": "created an account",
   "user.role_change": "changed a role",
   "user.deactivate": "deactivated an account",

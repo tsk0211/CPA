@@ -13,9 +13,12 @@ projectsRouter.use(requireAuth, blockIfMustChangePassword);
 // while Project._id is a real ObjectId — .find()/.findOne() cast between
 // the two automatically, but .aggregate() does NOT, so ids must be
 // stringified before being used in a $match/$in here.
+// Only approved purchases count toward the total — a Member's pending
+// purchase doesn't move the number until an Owner/Admin reviews it, and a
+// rejected one never does. See routes/purchases.ts for the review workflow.
 async function totalsByProjectId(projectIds: string[]): Promise<Map<string, number>> {
   const sums = await Purchase.aggregate<{ _id: string; total: number }>([
-    { $match: { projectId: { $in: projectIds }, deletedAt: null } },
+    { $match: { projectId: { $in: projectIds }, deletedAt: null, status: "approved" } },
     { $group: { _id: "$projectId", total: { $sum: "$amount" } } },
   ]);
   return new Map(sums.map((s) => [s._id, s.total]));

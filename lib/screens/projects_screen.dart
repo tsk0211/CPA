@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/project.dart';
+import '../models/role.dart';
 import '../state/app_scope.dart';
 import '../widgets/add_edit_project_sheet.dart';
+import '../widgets/breakpoints.dart';
 import '../widgets/responsive_center.dart';
 import 'activity_screen.dart';
 import 'profile_screen.dart';
@@ -30,6 +32,13 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   bool _searching = false;
   String _search = "";
   bool _bootstrapped = false;
+
+  // Desktop DataTable column sort — column 1 is Name, column 2 is Total
+  // spent (see _buildDesktopTable). Client-side only: the current page's
+  // items are re-sorted in place rather than round-tripping the server,
+  // since a project list page is small enough for that to be instant.
+  int _sortColumn = 1;
+  bool _sortAscending = true;
 
   @override
   void didChangeDependencies() {
@@ -201,6 +210,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         ],
       ),
       body: ResponsiveCenter(
+        maxWidth: isDesktop(context) ? 1100 : 720,
         child: Column(
           children: [
             AnimatedBuilder(
@@ -220,42 +230,108 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               },
             ),
             Expanded(
-              child: RefreshIndicator(
-                onRefresh: _loadFirstPage,
-                child: ListView.builder(
-                  controller: _scrollController,
-                  itemCount: _items.length + 1 + (role.canManageProjects ? 1 : 0),
-                  itemBuilder: (context, index) {
-                    if (index < _items.length) {
-                      final project = _items[index];
-                      return ListTile(
-                        leading: Hero(
-                          tag: 'project-icon-${project.id}',
-                          child: Text(project.icon, style: const TextStyle(fontSize: 24)),
-                        ),
-                        title: Text(project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text(currency.format(project.totalSpent)),
-                        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
-                        onLongPress: () => _showProjectMenu(project),
-                      );
-                    }
-                    if (index == _items.length) {
-                      if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
-                      if (_items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("No projects yet.")));
-                      return const SizedBox.shrink();
-                    }
-                    return ListTile(
-                      leading: const Icon(Icons.add),
-                      title: const Text("New project"),
-                      onTap: _addProject,
-                    );
-                  },
-                ),
-              ),
+              child: isDesktop(context) ? _buildDesktopTable(context, currency, role) : _buildList(context, currency, role),
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildList(BuildContext context, NumberFormat currency, Role role) {
+    return RefreshIndicator(
+      onRefresh: _loadFirstPage,
+      child: ListView.builder(
+        controller: _scrollController,
+        itemCount: _items.length + 1 + (role.canManageProjects ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index < _items.length) {
+            final project = _items[index];
+            return ListTile(
+              leading: Hero(
+                tag: 'project-icon-${project.id}',
+                child: Text(project.icon, style: const TextStyle(fontSize: 24)),
+              ),
+              title: Text(project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(currency.format(project.totalSpent)),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
+              onLongPress: () => _showProjectMenu(project),
+            );
+          }
+          if (index == _items.length) {
+            if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+            if (_items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("No projects yet.")));
+            return const SizedBox.shrink();
+          }
+          return ListTile(
+            leading: const Icon(Icons.add),
+            title: const Text("New project"),
+            onTap: _addProject,
+          );
+        },
+      ),
+    );
+  }
+
+  // A sortable table reads far better than a scrolling list once there are
+  // enough projects to be worth reviewing on a wide screen — mouse+keyboard
+  // users can scan Name/Total at a glance instead of scrolling tile by tile.
+  Widget _buildDesktopTable(BuildContext context, NumberFormat currency, Role role) {
+    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
+    if (_items.isEmpty) return const Center(child: Text("No projects yet."));
+
+    final sorted = [..._items]..sort((a, b) => _sortAscending ? _compare(a, b) : _compare(b, a));
+
+    return SingleChildScrollView(
+      controller: _scrollController,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: role.canManageProjects
+                  ? FilledButton.icon(onPressed: _addProject, icon: const Icon(Icons.add), label: const Text("New project"))
+                  : null,
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              sortColumnIndex: _sortColumn,
+              sortAscending: _sortAscending,
+              columns: [
+                const DataColumn(label: Text("")),
+                DataColumn(label: const Text("Name"), onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
+                DataColumn(label: const Text("Total spent"), numeric: true, onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
+                const DataColumn(label: Text("")),
+              ],
+              rows: [
+                for (final project in sorted)
+                  DataRow(
+                    onSelectChanged: (_) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
+                    cells: [
+                      DataCell(Text(project.icon, style: const TextStyle(fontSize: 18))),
+                      DataCell(Text(project.name)),
+                      DataCell(Text(currency.format(project.totalSpent))),
+                      DataCell(
+                        role.canManageProjects
+                            ? IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _showProjectMenu(project))
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          if (_loading) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
+          if (_hasMore && !_loading)
+            Center(child: TextButton(onPressed: _loadNextPage, child: const Text("Load more"))),
+        ],
+      ),
+    );
+  }
+
+  int _compare(Project a, Project b) => _sortColumn == 2 ? a.totalSpent.compareTo(b.totalSpent) : a.name.toLowerCase().compareTo(b.name.toLowerCase());
 }
