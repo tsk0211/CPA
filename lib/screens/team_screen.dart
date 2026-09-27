@@ -13,6 +13,13 @@ import '../state/app_scope.dart';
 import '../widgets/add_user_sheet.dart';
 import '../widgets/audit_entry_tile.dart';
 import '../widgets/breakpoints.dart';
+import '../widgets/common/busy_guard.dart';
+import '../widgets/common/confirm_dialog.dart';
+import '../widgets/common/empty_state.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/form_error_text.dart';
+import '../widgets/common/loading_indicator.dart';
+import '../widgets/common/skeleton.dart';
 import '../widgets/responsive_center.dart';
 import '../widgets/role_badge.dart';
 
@@ -32,6 +39,12 @@ const _auditActionLabels = {
   "user.role_change": "Changed a role",
   "user.deactivate": "Deactivated an account",
 };
+
+String _messageFor(Object error) {
+  if (error is ApiException) return error.message;
+  if (error is NetworkUnavailableException) return networkUnavailableMessage;
+  return "Something went wrong. Please try again.";
+}
 
 class TeamScreen extends StatefulWidget {
   const TeamScreen({super.key});
@@ -77,12 +90,13 @@ class _UsersTab extends StatefulWidget {
   State<_UsersTab> createState() => _UsersTabState();
 }
 
-class _UsersTabState extends State<_UsersTab> {
+class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
   final _searchController = TextEditingController();
   Timer? _debounce;
   List<TeamMember> _items = [];
   bool _loading = true;
   bool _bootstrapped = false;
+  String? _error;
 
   @override
   void didChangeDependencies() {
@@ -102,14 +116,45 @@ class _UsersTabState extends State<_UsersTab> {
     super.dispose();
   }
 
-  Future<void> _load(String search) async {
-    setState(() => _loading = true);
-    final result = await AppScope.of(context).users.list(search: search);
+  void _showError(Object error) {
     if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _load(String search) async {
+    final scope = AppScope.of(context);
+    final isInitialUnfilteredLoad = search.isEmpty && _items.isEmpty;
+
     setState(() {
-      _items = result.items;
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
+
+    // Same reasoning as projects_screen.dart's initial load: paint last
+    // session's cached team list instantly rather than a skeleton, only for
+    // the very first unfiltered load.
+    if (isInitialUnfilteredLoad) {
+      final cached = await scope.cache.loadTeam();
+      if (cached.isNotEmpty && mounted && _items.isEmpty) {
+        setState(() => _items = cached);
+      }
+    }
+
+    try {
+      final result = await scope.users.list(search: search);
+      if (!mounted) return;
+      setState(() => _items = result.items);
+      if (isInitialUnfilteredLoad) unawaited(scope.cache.saveTeam(result.items));
+    } catch (e) {
+      if (mounted) setState(() => _error = _messageFor(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -153,25 +198,34 @@ class _UsersTabState extends State<_UsersTab> {
     );
 
     if (action is Role) {
-      await scope.users.changeRole(target.id, action);
-      if (mounted) _load(_searchController.text);
+      await runBusy(target.id, () async {
+        try {
+          await scope.users.changeRole(target.id, action);
+          _showSuccess("${target.name} is now ${action.label}.");
+          if (mounted) await _load(_searchController.text);
+        } catch (e) {
+          _showError(e);
+        }
+      });
     } else if (action == "deactivate") {
       if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text("Deactivate ${target.name}?"),
-          content: const Text("They'll be signed out immediately and can no longer log in."),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text("Deactivate")),
-          ],
-        ),
+      final confirmed = await confirmAction(
+        context,
+        title: "Deactivate ${target.name}?",
+        message: "They'll be signed out immediately and can no longer log in.",
+        confirmLabel: "Deactivate",
+        tone: ConfirmDialogTone.destructive,
       );
-      if (confirmed == true) {
-        await scope.users.deactivate(target.id);
-        if (mounted) _load(_searchController.text);
-      }
+      if (!confirmed) return;
+      await runBusy(target.id, () async {
+        try {
+          await scope.users.deactivate(target.id);
+          _showSuccess("${target.name} was deactivated.");
+          if (mounted) await _load(_searchController.text);
+        } catch (e) {
+          _showError(e);
+        }
+      });
     }
   }
 
@@ -198,17 +252,42 @@ class _UsersTabState extends State<_UsersTab> {
           ),
         ),
         Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : isDesktop(context)
-                  ? _buildDesktopTable(context)
-                  : _buildList(context),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _buildBody(context),
+          ),
         ),
       ],
     );
   }
 
+  Widget _buildBody(BuildContext context) {
+    if (_loading && _items.isEmpty && _error == null) {
+      return const SkeletonList(key: ValueKey('loading'));
+    }
+    if (_error != null && _items.isEmpty) {
+      return EmptyState(
+        key: const ValueKey('error'),
+        icon: Icons.error_outline,
+        title: "Couldn't load the team",
+        subtitle: _error,
+        action: FilledButton(onPressed: () => _load(_searchController.text), child: const Text("Retry")),
+      );
+    }
+    return KeyedSubtree(
+      key: const ValueKey('content'),
+      child: isDesktop(context) ? _buildDesktopTable(context) : _buildList(context),
+    );
+  }
+
   Widget _buildList(BuildContext context) {
+    if (_items.isEmpty) {
+      return EmptyState(
+        icon: Icons.group_off_outlined,
+        title: "No team members yet",
+        action: FilledButton.icon(onPressed: _addUser, icon: const Icon(Icons.person_add_alt), label: const Text("New account")),
+      );
+    }
     return ListView.builder(
       itemCount: _items.length + 1,
       itemBuilder: (context, index) {
@@ -216,40 +295,54 @@ class _UsersTabState extends State<_UsersTab> {
           return ListTile(leading: const Icon(Icons.person_add_alt), title: const Text("New account"), onTap: _addUser);
         }
         final member = _items[index];
+        final busy = isBusy(member.id);
         return ListTile(
           leading: CircleAvatar(child: Text(member.name.isNotEmpty ? member.name[0].toUpperCase() : "?")),
           title: Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(member.email, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: RoleBadge(role: member.role),
-          onTap: () => _showUserActions(member),
+          trailing: busy ? const InlineSpinner() : RoleBadge(role: member.role),
+          onTap: busy ? null : () => _showUserActions(member),
         );
       },
     );
   }
 
   Widget _buildDesktopTable(BuildContext context) {
-    if (_items.isEmpty) return const Center(child: Text("No team members yet."));
+    if (_items.isEmpty) {
+      return EmptyState(
+        icon: Icons.group_off_outlined,
+        title: "No team members yet",
+        action: FilledButton.icon(onPressed: _addUser, icon: const Icon(Icons.person_add_alt), label: const Text("New account")),
+      );
+    }
     return SingleChildScrollView(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: const [
-            DataColumn(label: Text("Name")),
-            DataColumn(label: Text("Email")),
-            DataColumn(label: Text("Role")),
-            DataColumn(label: Text("")),
-          ],
-          rows: [
-            for (final member in _items)
-              DataRow(
-                cells: [
-                  DataCell(Text(member.name)),
-                  DataCell(Text(member.email)),
-                  DataCell(RoleBadge(role: member.role)),
-                  DataCell(IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _showUserActions(member))),
-                ],
-              ),
-          ],
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text("Name")),
+              DataColumn(label: Text("Email")),
+              DataColumn(label: Text("Role")),
+              DataColumn(label: Text("")),
+            ],
+            rows: [
+              for (final member in _items)
+                DataRow(
+                  cells: [
+                    DataCell(Text(member.name)),
+                    DataCell(Text(member.email)),
+                    DataCell(RoleBadge(role: member.role)),
+                    DataCell(
+                      isBusy(member.id)
+                          ? const InlineSpinner()
+                          : IconButton(icon: const Icon(Icons.more_vert), tooltip: "Actions", onPressed: () => _showUserActions(member)),
+                    ),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -269,6 +362,7 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
   bool _hasMore = true;
   bool _loading = true;
   bool _bootstrapped = false;
+  String? _error;
 
   // Filters: person and project filter by id (fetched once, shown by name
   // in the dropdowns); action filters by the same string audit entries are
@@ -299,35 +393,51 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
   // own paginated search) — one page of up to 100 is enough for a filter
   // dropdown without needing its own search-as-you-type sheet.
   Future<void> _loadFilterOptions() async {
-    final scope = AppScope.of(context);
-    final people = await scope.users.list(limit: 100);
-    final projects = await scope.projects.list(limit: 100);
-    if (!mounted) return;
-    setState(() {
-      _people = people.items;
-      _projects = projects.items;
-    });
+    try {
+      final scope = AppScope.of(context);
+      final people = await scope.users.list(limit: 100);
+      final projects = await scope.projects.list(limit: 100);
+      if (!mounted) return;
+      setState(() {
+        _people = people.items;
+        _projects = projects.items;
+      });
+    } catch (e) {
+      // The filter dropdowns are a convenience on top of the activity feed
+      // itself, which loads independently — a failure here just leaves the
+      // dropdowns showing "Anyone"/"Any project" rather than blocking the
+      // whole tab, so it's surfaced quietly instead of as a full error view.
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't load filter options: ${_messageFor(e)}")));
+    }
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final result = await AppScope.of(context).auditLog.list(
-          page: 1,
-          actorId: _selectedPerson?.id,
-          action: _selectedAction,
-          projectId: _selectedProject?.id,
-          from: _dateRange?.start,
-          to: _dateRange?.end,
-        );
-    if (!mounted) return;
     setState(() {
-      _items
-        ..clear()
-        ..addAll(result.items);
-      _hasMore = result.hasMore;
-      _page = 1;
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
+    try {
+      final result = await AppScope.of(context).auditLog.list(
+            page: 1,
+            actorId: _selectedPerson?.id,
+            action: _selectedAction,
+            projectId: _selectedProject?.id,
+            from: _dateRange?.start,
+            to: _dateRange?.end,
+          );
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(result.items);
+        _hasMore = result.hasMore;
+        _page = 1;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = _messageFor(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _pickDateRange() async {
@@ -361,10 +471,8 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
         [XFile.fromData(Uint8List.fromList(bytes), name: filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")],
         text: "CPA audit log export",
       );
-    } on ApiException catch (e) {
-      setState(() => _exportError = e.message);
-    } on NetworkUnavailableException {
-      setState(() => _exportError = "Can't reach the server. Export needs a live connection.");
+    } catch (e) {
+      setState(() => _exportError = _messageFor(e));
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -451,9 +559,7 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
               if (_hasFilters) TextButton(onPressed: _clearFilters, child: const Text("Clear filters")),
               FilledButton.icon(
                 onPressed: _exporting ? null : _export,
-                icon: _exporting
-                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.ios_share),
+                icon: _exporting ? const InlineSpinner() : const Icon(Icons.ios_share),
                 label: const Text("Export .xlsx"),
               ),
             ],
@@ -462,18 +568,40 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
         if (_exportError != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(_exportError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            child: FormErrorText(_exportError),
           ),
-        Expanded(child: _buildList()),
+        Expanded(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _buildBody(),
+          ),
+        ),
       ],
     );
   }
 
   String _fmtDate(DateTime d) => "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
+  Widget _buildBody() {
+    if (_loading && _items.isEmpty && _error == null) {
+      return const SkeletonList(key: ValueKey('loading'));
+    }
+    if (_error != null && _items.isEmpty) {
+      return EmptyState(
+        key: const ValueKey('error'),
+        icon: Icons.error_outline,
+        title: "Couldn't load activity",
+        subtitle: _error,
+        action: FilledButton(onPressed: _load, child: const Text("Retry")),
+      );
+    }
+    if (_items.isEmpty) {
+      return const EmptyState(key: ValueKey('empty'), icon: Icons.history_toggle_off, title: "No activity recorded yet");
+    }
+    return KeyedSubtree(key: const ValueKey('content'), child: _buildList());
+  }
+
   Widget _buildList() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_items.isEmpty) return const Center(child: Text("No activity recorded yet."));
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView.builder(
@@ -482,19 +610,25 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
           if (index >= _items.length) {
             return TextButton(
               onPressed: () async {
-                final result = await AppScope.of(context).auditLog.list(
-                      page: _page + 1,
-                      actorId: _selectedPerson?.id,
-                      action: _selectedAction,
-                      projectId: _selectedProject?.id,
-                      from: _dateRange?.start,
-                      to: _dateRange?.end,
-                    );
-                setState(() {
-                  _items.addAll(result.items);
-                  _page += 1;
-                  _hasMore = result.hasMore;
-                });
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  final result = await AppScope.of(context).auditLog.list(
+                        page: _page + 1,
+                        actorId: _selectedPerson?.id,
+                        action: _selectedAction,
+                        projectId: _selectedProject?.id,
+                        from: _dateRange?.start,
+                        to: _dateRange?.end,
+                      );
+                  if (!mounted) return;
+                  setState(() {
+                    _items.addAll(result.items);
+                    _page += 1;
+                    _hasMore = result.hasMore;
+                  });
+                } catch (e) {
+                  if (mounted) messenger.showSnackBar(SnackBar(content: Text(_messageFor(e))));
+                }
               },
               child: const Text("Load more"),
             );

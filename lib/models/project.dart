@@ -28,4 +28,14 @@ class Project {
         totalSpent: (json["totalSpent"] as num?)?.toDouble() ?? 0,
         autoApproveThreshold: (json["autoApproveThreshold"] as num?)?.toDouble() ?? 0,
       );
+
+  Map<String, dynamic> toJson() => {
+        "_id": id,
+        "name": name,
+        "icon": icon,
+        "createdBy": createdBy,
+        "createdAt": createdAt.toIso8601String(),
+        "totalSpent": totalSpent,
+        "autoApproveThreshold": autoApproveThreshold,
+      };
 }

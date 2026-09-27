@@ -21,7 +21,7 @@ purchasesRouter.use(requireAuth, blockIfMustChangePassword);
 // Purchase.idempotencyKey is what actually closes the race between the
 // findOne check below and a near-simultaneous duplicate request.
 purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: AuthedRequest, res) => {
-  const { projectId, amount, description, quantity, unit, vendor, category, notes, idempotencyKey } = req.body as {
+  const { projectId, amount, description, quantity, unit, vendor, category, notes, idempotencyKey, capturedOffline } = req.body as {
     projectId?: string;
     amount?: number;
     description?: string;
@@ -31,6 +31,7 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
     category?: string;
     notes?: string;
     idempotencyKey?: string;
+    capturedOffline?: boolean;
   };
   if (!projectId || !amount || amount <= 0 || !description?.trim() || !idempotencyKey?.trim()) {
     return res.status(400).json({ error: "projectId, a positive amount, a description, and an idempotencyKey are required" });
@@ -51,9 +52,15 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
   // them review their own entries would just be friction — only a Member's
   // purchase enters the pending queue for someone else to approve/reject.
   // A Member's purchase at or under the project's autoApproveThreshold also
-  // skips the queue — see models/Project.ts.
+  // skips the queue — see models/Project.ts. None of that applies to a
+  // purchase captured offline and synced later, regardless of role: it
+  // hasn't been checked against the server's current state, and two devices
+  // offline at once could independently log the same real-world purchase —
+  // forcing a human look at every one of these is cheaper than getting that
+  // wrong silently.
   const autoApprove =
-    req.user!.role === "owner" || req.user!.role === "admin" || amount <= project.autoApproveThreshold;
+    !capturedOffline &&
+    (req.user!.role === "owner" || req.user!.role === "admin" || amount <= project.autoApproveThreshold);
 
   let purchase;
   try {
@@ -68,6 +75,7 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
       notes: notes?.trim() || null,
       idempotencyKey,
       createdBy: req.user!.id,
+      capturedOffline: Boolean(capturedOffline),
       status: autoApprove ? "approved" : "pending",
       reviewedBy: autoApprove ? req.user!.id : null,
       reviewedAt: autoApprove ? new Date() : null,
@@ -87,7 +95,14 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
     action: "purchase.create",
     entityType: "purchase",
     entityId: purchase._id,
-    after: { projectId, amount: purchase.amount, description: purchase.description, quantity: purchase.quantity, unit: purchase.unit },
+    after: {
+      projectId,
+      amount: purchase.amount,
+      description: purchase.description,
+      quantity: purchase.quantity,
+      unit: purchase.unit,
+      capturedOffline: purchase.capturedOffline,
+    },
   });
 
   res.status(201).json(purchase);

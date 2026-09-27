@@ -9,6 +9,10 @@ import '../models/project.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
 import '../widgets/breakpoints.dart';
+import '../widgets/common/empty_state.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/form_error_text.dart';
+import '../widgets/common/loading_indicator.dart';
 import '../widgets/project_multi_select_sheet.dart';
 import '../widgets/responsive_center.dart';
 
@@ -134,7 +138,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       setState(() => _previewError = e.message);
     } on NetworkUnavailableException {
       if (!mounted || requestId != _previewRequestId) return;
-      setState(() => _previewError = "Can't reach the server. Reports need a live connection.");
+      setState(() => _previewError = networkUnavailableMessage);
     } finally {
       if (mounted && requestId == _previewRequestId) setState(() => _previewLoading = false);
     }
@@ -162,7 +166,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } on ApiException catch (e) {
       setState(() => _exportError = e.message);
     } on NetworkUnavailableException {
-      setState(() => _exportError = "Can't reach the server. Reports need a live connection.");
+      setState(() => _exportError = networkUnavailableMessage);
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -217,13 +221,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
           const SizedBox(height: 8),
           if (_previewError != null) ...[
-            Text(_previewError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            FormErrorText(_previewError),
             const SizedBox(height: 8),
           ],
           if (_previewLoading && _previewItems.isEmpty)
-            const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
+            const Padding(padding: EdgeInsets.all(16), child: LoadingView())
           else if (_previewLoaded && _previewItems.isEmpty)
-            const Padding(padding: EdgeInsets.all(16), child: Center(child: Text("No purchases match these filters.")))
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: EmptyState(icon: Icons.search_off, title: "No purchases match these filters"),
+            )
           else
             for (final p in _previewItems)
               ListTile(
@@ -241,9 +248,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             Center(
               child: TextButton(
                 onPressed: _previewLoading ? null : () => _loadPreview(reset: false),
-                child: _previewLoading
-                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text("Load more"),
+                child: _previewLoading ? const InlineSpinner() : const Text("Load more"),
               ),
             ),
           const SizedBox(height: 20),
@@ -266,12 +271,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ),
           if (_exportError != null) ...[
             const SizedBox(height: 8),
-            Text(_exportError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            FormErrorText(_exportError),
           ],
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _exporting ? null : _export,
-            icon: _exporting ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.ios_share),
+            icon: _exporting ? const InlineSpinner() : const Icon(Icons.ios_share),
             label: const Text("Export"),
           ),
         ],

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
-enum ServerStatus { idle, waking, live }
+import '../models/server_status.dart';
+
+export '../models/server_status.dart';
 
 /// Traffic-light indicator + "Start" button for the Login screen. Render is
 /// dumb (color/label from `status`); LoginScreen owns the actual polling

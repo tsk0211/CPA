@@ -5,6 +5,9 @@ import '../models/purchase.dart';
 import '../models/units.dart';
 import '../offline/pending_purchase.dart';
 import '../state/app_scope.dart';
+import 'common/error_text.dart';
+import 'common/form_error_text.dart';
+import 'common/loading_button.dart';
 import 'sheet_padding.dart';
 
 /// Returns true if something changed (created, queued offline, or edited).
@@ -119,7 +122,7 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
     } on NetworkUnavailableException {
       if (widget.existing != null) {
         // Edits require connectivity by design — only "add" is queueable.
-        setState(() => _error = "Can't reach the server to save this edit. Try again once you're back online.");
+        setState(() => _error = networkUnavailableMessage);
       } else {
         await scope.offlineQueue.add(PendingPurchase(
           localId: PendingPurchase.newLocalId(),
@@ -205,18 +208,9 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
               minLines: 1,
               maxLines: 3,
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ],
+            FormErrorText(_error),
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _submitting ? null : _submit,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: _submitting ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text("Save"),
-              ),
-            ),
+            LoadingFilledButton(loading: _submitting, onPressed: _submit, child: const Text("Save")),
           ],
         ),
       ),

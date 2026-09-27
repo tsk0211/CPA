@@ -6,6 +6,7 @@ import '../api/projects_api.dart';
 import '../api/purchases_api.dart';
 import '../api/users_api.dart';
 import '../offline/offline_queue.dart';
+import 'local_cache.dart';
 import 'session.dart';
 
 /// Simple hand-rolled dependency scope — one ApiClient and its typed
@@ -20,6 +21,7 @@ class AppScope extends InheritedWidget {
   final UsersApi users;
   final AuditApi auditLog;
   final OfflineQueue offlineQueue;
+  final LocalCache cache;
 
   const AppScope({
     super.key,
@@ -30,6 +32,7 @@ class AppScope extends InheritedWidget {
     required this.users,
     required this.auditLog,
     required this.offlineQueue,
+    required this.cache,
     required super.child,
   });
 

@@ -88,14 +88,22 @@ class _HomeShellState extends State<HomeShell> {
               ],
             ),
             const VerticalDivider(width: 1),
-            Expanded(child: body),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: KeyedSubtree(key: ValueKey(safeIndex), child: body),
+              ),
+            ),
           ],
         ),
       );
     }
 
     return Scaffold(
-      body: body,
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        child: KeyedSubtree(key: ValueKey(safeIndex), child: body),
+      ),
       bottomNavigationBar: destinations.length > 1
           ? NavigationBar(
               selectedIndex: safeIndex,

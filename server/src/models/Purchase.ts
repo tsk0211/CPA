@@ -29,6 +29,13 @@ export interface PurchaseDoc {
   reviewedBy: string | null;
   reviewedAt: Date | null;
   rejectionReason: string | null;
+  // Set when the client created this while offline and synced it later —
+  // forces manual review regardless of role/auto-approve threshold, since an
+  // offline entry hasn't been checked against the server's current state
+  // (project still exists, threshold hasn't changed, etc.) and two devices
+  // offline at once could independently log the same real-world purchase.
+  // See routes/purchases.ts.
+  capturedOffline: boolean;
 }
 
 const purchaseSchema = new Schema<PurchaseDoc>({
@@ -54,6 +61,7 @@ const purchaseSchema = new Schema<PurchaseDoc>({
   reviewedBy: { type: Schema.Types.String, ref: "User", default: null },
   reviewedAt: { type: Date, default: null },
   rejectionReason: { type: String, default: null, trim: true },
+  capturedOffline: { type: Boolean, required: true, default: false },
 });
 
 purchaseSchema.index({ projectId: 1, purchasedAt: -1 });

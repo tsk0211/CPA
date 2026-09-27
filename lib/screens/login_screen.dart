@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../api/api_exception.dart';
 import '../state/app_scope.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/form_error_text.dart';
+import '../widgets/common/loading_button.dart';
 import '../widgets/server_status_light.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -66,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } on NetworkUnavailableException {
-      setState(() => _error = "Can't reach the server. Check your connection and try again.");
+      setState(() => _error = networkUnavailableMessage);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -91,41 +94,44 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 24),
                   ServerStatusLight(status: _serverStatus, onStart: _start),
                   const SizedBox(height: 24),
-                  TextField(
-                    controller: _emailController,
-                    enabled: formEnabled,
-                    keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.email],
-                    decoration: const InputDecoration(labelText: "Email"),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _passwordController,
-                    enabled: formEnabled,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.password],
-                    decoration: const InputDecoration(labelText: "Password"),
-                    onSubmitted: (_) => formEnabled ? _submit() : null,
-                  ),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    value: _rememberMe,
-                    onChanged: formEnabled ? (v) => setState(() => _rememberMe = v ?? false) : null,
-                    title: const Text("Remember me on this device"),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 4),
-                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ],
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: (!formEnabled || _submitting) ? null : _submit,
+                  Card(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: _submitting
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text("Log in"),
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _emailController,
+                            enabled: formEnabled,
+                            keyboardType: TextInputType.emailAddress,
+                            autofillHints: const [AutofillHints.email],
+                            decoration: const InputDecoration(labelText: "Email"),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _passwordController,
+                            enabled: formEnabled,
+                            obscureText: true,
+                            autofillHints: const [AutofillHints.password],
+                            decoration: const InputDecoration(labelText: "Password"),
+                            onSubmitted: (_) => formEnabled ? _submit() : null,
+                          ),
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            value: _rememberMe,
+                            onChanged: formEnabled ? (v) => setState(() => _rememberMe = v ?? false) : null,
+                            title: const Text("Remember me on this device"),
+                          ),
+                          FormErrorText(_error),
+                          const SizedBox(height: 12),
+                          LoadingFilledButton(
+                            loading: _submitting,
+                            onPressed: (!formEnabled || _submitting) ? null : _submit,
+                            child: const Text("Log in"),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),

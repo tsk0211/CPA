@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../api/api_exception.dart';
 import '../state/app_scope.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/form_error_text.dart';
+import '../widgets/common/loading_button.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   final bool forced;
@@ -40,7 +43,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } on NetworkUnavailableException {
-      setState(() => _error = "Can't reach the server. Check your connection and try again.");
+      setState(() => _error = networkUnavailableMessage);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -65,30 +68,32 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     const Text("You're using a temporary password. Choose a new one to continue."),
                     const SizedBox(height: 24),
                   ],
-                  TextField(
-                    controller: _currentController,
-                    obscureText: true,
-                    decoration: InputDecoration(labelText: widget.forced ? "Temporary password" : "Current password"),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _newController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: "New password", helperText: "At least 8 characters"),
-                    onSubmitted: (_) => _submit(),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 4),
-                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ],
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: _submitting ? null : _submit,
+                  Card(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: _submitting
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text("Save"),
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _currentController,
+                            obscureText: true,
+                            decoration: InputDecoration(
+                              labelText: widget.forced ? "Temporary password" : "Current password",
+                              helperText: widget.forced ? "The one-time password you just logged in with" : null,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _newController,
+                            obscureText: true,
+                            decoration: const InputDecoration(labelText: "New password", helperText: "At least 8 characters"),
+                            onSubmitted: (_) => _submit(),
+                          ),
+                          FormErrorText(_error),
+                          const SizedBox(height: 12),
+                          LoadingFilledButton(loading: _submitting, onPressed: _submit, child: const Text("Save")),
+                        ],
+                      ),
                     ),
                   ),
                 ],

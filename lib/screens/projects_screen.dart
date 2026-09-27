@@ -3,11 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../api/api_exception.dart';
 import '../models/project.dart';
 import '../models/role.dart';
 import '../state/app_scope.dart';
 import '../widgets/add_edit_project_sheet.dart';
 import '../widgets/breakpoints.dart';
+import '../widgets/common/confirm_dialog.dart';
+import '../widgets/common/empty_state.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/skeleton.dart';
 import '../widgets/responsive_center.dart';
 import 'activity_screen.dart';
 import 'profile_screen.dart';
@@ -29,9 +34,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   int _page = 1;
   bool _hasMore = true;
   bool _loading = false;
+  bool _mutating = false;
   bool _searching = false;
   String _search = "";
   bool _bootstrapped = false;
+  String? _error;
 
   // Desktop DataTable column sort — column 1 is Name, column 2 is Total
   // spent (see _buildDesktopTable). Client-side only: the current page's
@@ -71,34 +78,78 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     super.dispose();
   }
 
+  String _messageFor(Object error) {
+    if (error is ApiException) return error.message;
+    if (error is NetworkUnavailableException) return networkUnavailableMessage;
+    return "Something went wrong. Please try again.";
+  }
+
+  void _showErrorSnackBar(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+  }
+
+  void _showSuccessSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _loadFirstPage() async {
+    final scope = AppScope.of(context);
+    final isInitialUnfilteredLoad = _search.isEmpty && _items.isEmpty;
+
     setState(() {
       _loading = true;
+      _error = null;
       _page = 1;
       _hasMore = true;
     });
-    final result = await AppScope.of(context).projects.list(page: 1, search: _search);
-    if (!mounted) return;
-    setState(() {
-      _items
-        ..clear()
-        ..addAll(result.items);
-      _hasMore = result.hasMore;
-      _loading = false;
-    });
+
+    // Paint something real-looking immediately from last session's cache,
+    // rather than a skeleton, while the live request is still in flight —
+    // only for the very first unfiltered load, never for a search or a
+    // manual refresh where showing stale data instead of a spinner would be
+    // actively misleading.
+    if (isInitialUnfilteredLoad) {
+      final cached = await scope.cache.loadProjects();
+      if (cached.isNotEmpty && mounted && _items.isEmpty) {
+        setState(() => _items.addAll(cached));
+      }
+    }
+
+    try {
+      final result = await scope.projects.list(page: 1, search: _search);
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(result.items);
+        _hasMore = result.hasMore;
+      });
+      if (isInitialUnfilteredLoad) unawaited(scope.cache.saveProjects(result.items));
+    } catch (e) {
+      if (mounted) setState(() => _error = _messageFor(e));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _loadNextPage() async {
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
-    final result = await AppScope.of(context).projects.list(page: _page + 1, search: _search);
-    if (!mounted) return;
-    setState(() {
-      _items.addAll(result.items);
-      _page += 1;
-      _hasMore = result.hasMore;
-      _loading = false;
-    });
+    try {
+      final result = await AppScope.of(context).projects.list(page: _page + 1, search: _search);
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(result.items);
+        _page += 1;
+        _hasMore = result.hasMore;
+      });
+    } catch (e) {
+      _showErrorSnackBar(e);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   void _onSearchChanged(String value) {
@@ -112,17 +163,33 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   Future<void> _addProject() async {
     final scope = AppScope.of(context);
     final result = await showAddEditProjectSheet(context);
-    if (result == null) return;
-    await scope.projects.create(result.$1, result.$2);
-    if (mounted) _loadFirstPage();
+    if (result == null || _mutating) return;
+    setState(() => _mutating = true);
+    try {
+      await scope.projects.create(result.$1, result.$2);
+      _showSuccessSnackBar("Project created.");
+      if (mounted) await _loadFirstPage();
+    } catch (e) {
+      _showErrorSnackBar(e);
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
   }
 
   Future<void> _editProject(Project project) async {
     final scope = AppScope.of(context);
     final result = await showAddEditProjectSheet(context, existing: project);
-    if (result == null) return;
-    await scope.projects.update(project.id, result.$1, result.$2, autoApproveThreshold: result.$3);
-    if (mounted) _loadFirstPage();
+    if (result == null || _mutating) return;
+    setState(() => _mutating = true);
+    try {
+      await scope.projects.update(project.id, result.$1, result.$2, autoApproveThreshold: result.$3);
+      _showSuccessSnackBar("Project updated.");
+      if (mounted) await _loadFirstPage();
+    } catch (e) {
+      _showErrorSnackBar(e);
+    } finally {
+      if (mounted) setState(() => _mutating = false);
+    }
   }
 
   Future<void> _showProjectMenu(Project project) async {
@@ -150,21 +217,24 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     if (action == "edit") {
       _editProject(project);
     } else if (action == "delete") {
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text("Delete ${project.name}?"),
-          content: const Text("Its purchase history is kept but hidden from normal views."),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete")),
-          ],
-        ),
+      if (!mounted || _mutating) return;
+      final confirmed = await confirmAction(
+        context,
+        title: "Delete ${project.name}?",
+        message: "Its purchase history is kept but hidden from normal views.",
+        confirmLabel: "Delete",
+        tone: ConfirmDialogTone.destructive,
       );
-      if (confirmed == true) {
+      if (!confirmed) return;
+      setState(() => _mutating = true);
+      try {
         await scope.projects.delete(project.id);
-        if (mounted) _loadFirstPage();
+        _showSuccessSnackBar("Project deleted.");
+        if (mounted) await _loadFirstPage();
+      } catch (e) {
+        _showErrorSnackBar(e);
+      } finally {
+        if (mounted) setState(() => _mutating = false);
       }
     }
   }
@@ -188,6 +258,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         actions: [
           IconButton(
             icon: Icon(_searching ? Icons.close : Icons.search),
+            tooltip: _searching ? "Close search" : "Search",
             onPressed: () => setState(() {
               _searching = !_searching;
               if (!_searching) {
@@ -230,7 +301,10 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               },
             ),
             Expanded(
-              child: isDesktop(context) ? _buildDesktopTable(context, currency, role) : _buildList(context, currency, role),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: _buildBody(context, currency, role),
+              ),
             ),
           ],
         ),
@@ -238,7 +312,34 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     );
   }
 
+  Widget _buildBody(BuildContext context, NumberFormat currency, Role role) {
+    if (_loading && _items.isEmpty && _error == null) {
+      return const SkeletonList(key: ValueKey('loading'));
+    }
+    if (_error != null && _items.isEmpty) {
+      return EmptyState(
+        key: const ValueKey('error'),
+        icon: Icons.error_outline,
+        title: "Couldn't load projects",
+        subtitle: _error,
+        action: FilledButton(onPressed: _loadFirstPage, child: const Text("Retry")),
+      );
+    }
+    return KeyedSubtree(
+      key: const ValueKey('content'),
+      child: isDesktop(context) ? _buildDesktopTable(context, currency, role) : _buildList(context, currency, role),
+    );
+  }
+
   Widget _buildList(BuildContext context, NumberFormat currency, Role role) {
+    if (_items.isEmpty) {
+      return EmptyState(
+        icon: Icons.folder_off_outlined,
+        title: "No projects yet",
+        subtitle: role.canManageProjects ? "Create your first project to start tracking purchases." : "Ask an admin to add a project.",
+        action: role.canManageProjects ? FilledButton.icon(onPressed: _addProject, icon: const Icon(Icons.add), label: const Text("New project")) : null,
+      );
+    }
     return RefreshIndicator(
       onRefresh: _loadFirstPage,
       child: ListView.builder(
@@ -260,7 +361,6 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           }
           if (index == _items.length) {
             if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
-            if (_items.isEmpty) return const Padding(padding: EdgeInsets.all(32), child: Center(child: Text("No projects yet.")));
             return const SizedBox.shrink();
           }
           return ListTile(
@@ -277,8 +377,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   // enough projects to be worth reviewing on a wide screen — mouse+keyboard
   // users can scan Name/Total at a glance instead of scrolling tile by tile.
   Widget _buildDesktopTable(BuildContext context, NumberFormat currency, Role role) {
-    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
-    if (_items.isEmpty) return const Center(child: Text("No projects yet."));
+    if (_items.isEmpty) {
+      return EmptyState(
+        icon: Icons.folder_off_outlined,
+        title: "No projects yet",
+        subtitle: role.canManageProjects ? "Create your first project to start tracking purchases." : "Ask an admin to add a project.",
+        action: role.canManageProjects ? FilledButton.icon(onPressed: _addProject, icon: const Icon(Icons.add), label: const Text("New project")) : null,
+      );
+    }
 
     final sorted = [..._items]..sort((a, b) => _sortAscending ? _compare(a, b) : _compare(b, a));
 
@@ -296,33 +402,36 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   : null,
             ),
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              sortColumnIndex: _sortColumn,
-              sortAscending: _sortAscending,
-              columns: [
-                const DataColumn(label: Text("")),
-                DataColumn(label: const Text("Name"), onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
-                DataColumn(label: const Text("Total spent"), numeric: true, onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
-                const DataColumn(label: Text("")),
-              ],
-              rows: [
-                for (final project in sorted)
-                  DataRow(
-                    onSelectChanged: (_) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
-                    cells: [
-                      DataCell(Text(project.icon, style: const TextStyle(fontSize: 18))),
-                      DataCell(Text(project.name)),
-                      DataCell(Text(currency.format(project.totalSpent))),
-                      DataCell(
-                        role.canManageProjects
-                            ? IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _showProjectMenu(project))
-                            : const SizedBox.shrink(),
-                      ),
-                    ],
-                  ),
-              ],
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                sortColumnIndex: _sortColumn,
+                sortAscending: _sortAscending,
+                columns: [
+                  const DataColumn(label: Text("")),
+                  DataColumn(label: const Text("Name"), onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
+                  DataColumn(label: const Text("Total spent"), numeric: true, onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
+                  const DataColumn(label: Text("")),
+                ],
+                rows: [
+                  for (final project in sorted)
+                    DataRow(
+                      onSelectChanged: (_) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
+                      cells: [
+                        DataCell(Text(project.icon, style: const TextStyle(fontSize: 18))),
+                        DataCell(Text(project.name)),
+                        DataCell(Text(currency.format(project.totalSpent))),
+                        DataCell(
+                          role.canManageProjects
+                              ? IconButton(icon: const Icon(Icons.more_vert), tooltip: "More", onPressed: () => _showProjectMenu(project))
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
             ),
           ),
           if (_loading) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),

@@ -27,6 +27,11 @@ class PurchasesApi {
   // idempotencyKey is required: a retry of the exact same key (dropped
   // response, re-synced offline item) returns the original purchase
   // instead of creating a duplicate — see server/src/routes/purchases.ts.
+  // capturedOffline: set when this purchase was queued locally while
+  // offline and is only now being synced — the server forces it to
+  // "pending" regardless of role/auto-approve threshold in that case, since
+  // it hasn't been checked against the server's current state. See
+  // OfflineQueue.sync(), which is the only caller that ever passes true.
   Future<Purchase> create({
     required String projectId,
     required double amount,
@@ -37,6 +42,7 @@ class PurchasesApi {
     String? vendor,
     String? category,
     String? notes,
+    bool capturedOffline = false,
   }) async {
     final json = await client.post("/purchases", {
       "projectId": projectId,
@@ -48,6 +54,7 @@ class PurchasesApi {
       "vendor": ?vendor,
       "category": ?category,
       "notes": ?notes,
+      "capturedOffline": capturedOffline,
     });
     return Purchase.fromJson(json);
   }

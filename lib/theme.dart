@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 import 'models/role.dart';
@@ -19,6 +20,20 @@ ThemeData buildTheme(Brightness brightness) {
     scaffoldBackgroundColor: colorScheme.surface,
     textTheme: textTheme,
     splashFactory: InkSparkle.splashFactory,
+
+    // A single, subtle fade for in-app Navigator.push transitions on every
+    // platform (was left at Flutter's per-platform defaults before — most
+    // visibly a jarring slide-in on Android). iOS keeps its native
+    // slide-from-right since users expect that there.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.macOS: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+      },
+    ),
 
     appBarTheme: AppBarTheme(
       backgroundColor: colorScheme.surface,

@@ -5,6 +5,12 @@ import '../api/api_exception.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
 import '../widgets/breakpoints.dart';
+import '../widgets/common/confirm_dialog.dart';
+import '../widgets/common/empty_state.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/loading_indicator.dart';
+import '../widgets/common/offline_captured_badge.dart';
+import '../widgets/common/skeleton.dart';
 import '../widgets/reject_reason_dialog.dart';
 import '../widgets/responsive_center.dart';
 
@@ -59,7 +65,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } on NetworkUnavailableException {
-      if (mounted) setState(() => _error = "Can't reach the server. The review queue needs a live connection.");
+      if (mounted) setState(() => _error = networkUnavailableMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -79,6 +85,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _approve(Purchase purchase) async {
+    final confirmed = await confirmAction(
+      context,
+      title: "Approve this purchase?",
+      message: "It will count toward the project's total.",
+      confirmLabel: "Approve",
+    );
+    if (!confirmed || !mounted) return;
     setState(() => _busyIds.add(purchase.id));
     try {
       await AppScope.of(context).purchases.approve(purchase.id);
@@ -117,23 +130,37 @@ class _ReviewScreenState extends State<ReviewScreen> {
       ),
       body: ResponsiveCenter(
         maxWidth: isDesktop(context) ? 1100 : 720,
-        child: _buildBody(context),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _buildBody(context),
+        ),
       ),
     );
   }
 
   Widget _buildBody(BuildContext context) {
-    if (_loading && _items.isEmpty) return const Center(child: CircularProgressIndicator());
-    if (_error != null) return Center(child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)));
-    if (_items.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text("Nothing waiting for review. Purchases logged by Members will show up here.", textAlign: TextAlign.center),
-        ),
+    if (_loading && _items.isEmpty) return const SkeletonList(key: ValueKey('loading'));
+    if (_error != null) {
+      return EmptyState(
+        key: const ValueKey('error'),
+        icon: Icons.error_outline,
+        title: "Couldn't load the review queue",
+        subtitle: _error,
+        action: FilledButton(onPressed: _load, child: const Text("Retry")),
       );
     }
-    return isDesktop(context) ? _ReviewTable(items: _items, busyIds: _busyIds, onApprove: _approve, onReject: _reject) : _buildList(context);
+    if (_items.isEmpty) {
+      return const EmptyState(
+        key: ValueKey('empty'),
+        icon: Icons.fact_check_outlined,
+        title: "Nothing waiting for review",
+        subtitle: "Purchases logged by Members will show up here.",
+      );
+    }
+    return KeyedSubtree(
+      key: const ValueKey('content'),
+      child: isDesktop(context) ? _ReviewTable(items: _items, busyIds: _busyIds, onApprove: _approve, onReject: _reject) : _buildList(context),
+    );
   }
 
   Widget _buildList(BuildContext context) {
@@ -149,7 +176,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             return Center(
               child: TextButton(
                 onPressed: _loading ? null : _loadMore,
-                child: _loading ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text("Load more"),
+                child: _loading ? const InlineSpinner() : const Text("Load more"),
               ),
             );
           }
@@ -166,6 +193,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                     children: [
                       if (purchase.projectIcon != null) Padding(padding: const EdgeInsets.only(right: 8), child: Text(purchase.projectIcon!)),
                       Expanded(child: Text(purchase.description, style: Theme.of(context).textTheme.titleSmall)),
+                      if (purchase.capturedOffline) const Padding(padding: EdgeInsets.only(right: 6), child: OfflineCapturedBadge()),
                       Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
                     ],
                   ),
@@ -182,7 +210,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: busy ? null : () => _approve(purchase),
-                        child: busy ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Text("Approve"),
+                        child: busy ? const InlineSpinner() : const Text("Approve"),
                       ),
                     ],
                   ),
@@ -227,13 +255,16 @@ class _ReviewTable extends StatelessWidget {
                     if (purchase.projectIcon != null) Padding(padding: const EdgeInsets.only(right: 6), child: Text(purchase.projectIcon!)),
                     Text(purchase.projectName ?? "—"),
                   ])),
-                  DataCell(SizedBox(width: 260, child: Text(purchase.description, overflow: TextOverflow.ellipsis))),
+                  DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (purchase.capturedOffline) const Padding(padding: EdgeInsets.only(right: 6), child: OfflineCapturedBadge()),
+                    SizedBox(width: 220, child: Text(purchase.description, overflow: TextOverflow.ellipsis)),
+                  ])),
                   DataCell(Text(currency.format(purchase.amount))),
                   DataCell(Text(purchase.createdByName ?? "unknown")),
                   DataCell(Text(dateFormat.format(purchase.purchasedAt))),
                   DataCell(
                     busyIds.contains(purchase.id)
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const InlineSpinner()
                         : Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

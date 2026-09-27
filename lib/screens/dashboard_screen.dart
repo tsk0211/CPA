@@ -4,6 +4,10 @@ import 'package:intl/intl.dart';
 import '../api/api_exception.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../widgets/common/empty_state.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/skeleton.dart';
+import '../widgets/common/stat_card.dart';
 import '../widgets/responsive_center.dart';
 import 'profile_screen.dart';
 
@@ -70,7 +74,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } on NetworkUnavailableException {
-      if (mounted) setState(() => _error = "Can't reach the server.");
+      if (mounted) setState(() => _error = networkUnavailableMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -93,11 +97,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       body: ResponsiveCenter(
         maxWidth: 1200,
-        child: _loading && _recent.isEmpty
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? Center(child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)))
-                : RefreshIndicator(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _loading && _recent.isEmpty
+              ? const SkeletonList(key: ValueKey('loading'))
+              : _error != null
+                  ? EmptyState(
+                      key: const ValueKey('error'),
+                      icon: Icons.error_outline,
+                      title: "Couldn't load the dashboard",
+                      subtitle: _error,
+                      action: FilledButton(onPressed: _load, child: const Text("Retry")),
+                    )
+                  : RefreshIndicator(
+                      key: const ValueKey('content'),
                     onRefresh: _load,
                     child: ListView(
                       padding: const EdgeInsets.all(24),
@@ -108,26 +121,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           spacing: 16,
                           runSpacing: 16,
                           children: [
-                            _StatCard(icon: Icons.folder_outlined, label: "Active projects", value: "${_activeProjects ?? '—'}"),
+                            StatCard(icon: Icons.folder_outlined, label: "Active projects", value: "${_activeProjects ?? '—'}"),
                             // A mutable field, not a local, so `if (_monthSpend != null)`
                             // alone doesn't promote it to non-null — capture it first.
                             if (_monthSpend case final monthSpend?)
-                              _StatCard(icon: Icons.payments_outlined, label: "Approved spend this month", value: NumberFormat.simpleCurrency().format(monthSpend)),
+                              StatCard(icon: Icons.payments_outlined, label: "Approved spend this month", value: NumberFormat.simpleCurrency().format(monthSpend)),
                             if (_pendingReview != null)
-                              _StatCard(
+                              StatCard(
                                 icon: Icons.fact_check_outlined,
                                 label: "Awaiting review",
                                 value: "$_pendingReview",
                                 emphasize: _pendingReview! > 0,
                               ),
-                            if (_teamSize != null) _StatCard(icon: Icons.groups_outlined, label: "Team members", value: "$_teamSize"),
+                            if (_teamSize != null) StatCard(icon: Icons.groups_outlined, label: "Team members", value: "$_teamSize"),
                           ],
                         ),
                         const SizedBox(height: 32),
                         Text("Recent activity", style: Theme.of(context).textTheme.titleMedium),
                         const SizedBox(height: 8),
                         if (_recent.isEmpty)
-                          const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Text("Nothing logged yet."))
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: EmptyState(icon: Icons.receipt_long_outlined, title: "Nothing logged yet"),
+                          )
                         else
                           Card(
                             child: Column(
@@ -149,36 +165,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                   ),
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final bool emphasize;
-  const _StatCard({required this.icon, required this.label, required this.value, this.emphasize = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Container(
-        width: 220,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: emphasize ? scheme.tertiary : scheme.onSurfaceVariant),
-            const SizedBox(height: 12),
-            Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: emphasize ? scheme.tertiary : null)),
-            const SizedBox(height: 4),
-            Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
-          ],
         ),
       ),
     );
   }
 }
+

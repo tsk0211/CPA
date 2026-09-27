@@ -24,6 +24,7 @@ class Purchase {
   final DateTime? editedAt;
   final PurchaseStatus status;
   final String? rejectionReason;
+  final bool capturedOffline;
 
   Purchase({
     required this.id,
@@ -43,6 +44,7 @@ class Purchase {
     this.editedAt,
     this.status = PurchaseStatus.approved,
     this.rejectionReason,
+    this.capturedOffline = false,
   });
 
   // projectId/createdBy come back as plain string ids from
@@ -70,6 +72,7 @@ class Purchase {
       editedAt: json["editedAt"] != null ? DateTime.parse(json["editedAt"] as String) : null,
       status: PurchaseStatus.parse(json["status"] as String?),
       rejectionReason: json["rejectionReason"] as String?,
+      capturedOffline: json["capturedOffline"] as bool? ?? false,
     );
   }
 }

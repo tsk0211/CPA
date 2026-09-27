@@ -41,6 +41,7 @@ dependencies:
   path_provider: ^2.1.4
   shared_preferences: ^2.3.2
   connectivity_plus: ^6.0.5
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:

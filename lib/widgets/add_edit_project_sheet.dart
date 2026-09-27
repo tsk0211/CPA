@@ -29,6 +29,7 @@ class _AddEditProjectSheetState extends State<_AddEditProjectSheet> {
     text: widget.existing != null ? widget.existing!.autoApproveThreshold.toStringAsFixed(2) : "",
   );
   late String _icon = widget.existing?.icon ?? "📁";
+  String? _nameError;
 
   @override
   void dispose() {
@@ -38,7 +39,10 @@ class _AddEditProjectSheetState extends State<_AddEditProjectSheet> {
   }
 
   void _save() {
-    if (_nameController.text.trim().isEmpty) return;
+    if (_nameController.text.trim().isEmpty) {
+      setState(() => _nameError = "Project name is required.");
+      return;
+    }
     final threshold = widget.existing == null ? null : double.tryParse(_thresholdController.text.trim()) ?? 0;
     Navigator.of(context).pop((_nameController.text.trim(), _icon, threshold));
   }
@@ -67,7 +71,10 @@ class _AddEditProjectSheetState extends State<_AddEditProjectSheet> {
                 child: TextField(
                   controller: _nameController,
                   autofocus: true,
-                  decoration: const InputDecoration(labelText: "Project name"),
+                  decoration: InputDecoration(labelText: "Project name", errorText: _nameError),
+                  onChanged: (_) {
+                    if (_nameError != null) setState(() => _nameError = null);
+                  },
                   onSubmitted: (_) => _save(),
                 ),
               ),

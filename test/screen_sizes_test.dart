@@ -39,6 +39,10 @@ http.Client _buildMockClient() {
   return MockClient((request) async {
     final path = request.url.path;
 
+    if (path == "/health") {
+      return _json({"ok": true});
+    }
+
     if (path == "/auth/me") {
       return _json({"id": "u1", "name": "Priya Sharma", "email": "priya@cpa.test", "role": "owner", "mustChangePassword": false});
     }
