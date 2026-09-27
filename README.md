@@ -53,8 +53,9 @@ there (avoids conflict-resolution complexity for a fraud-sensitive edit trail).
 
 ```bash
 flutter pub get
+flutter run   # defaults to the deployed Render server (see server/README.md)
+# or, for local dev against `npm run dev` in server/:
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:4000   # Android emulator -> local server
-# or point at the deployed Render URL once server/ is deployed (see server/README.md)
 ```
 
 ## Tests
