@@ -7,11 +7,13 @@ import '../api/api_exception.dart';
 import '../models/project.dart';
 import '../models/role.dart';
 import '../state/app_scope.dart';
+import '../theme.dart';
 import '../widgets/add_edit_project_sheet.dart';
 import '../widgets/breakpoints.dart';
 import '../widgets/common/confirm_dialog.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/common/error_text.dart';
+import '../widgets/common/icon_badge.dart';
 import '../widgets/common/skeleton.dart';
 import '../widgets/responsive_center.dart';
 import 'activity_screen.dart';
@@ -351,7 +353,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             return ListTile(
               leading: Hero(
                 tag: 'project-icon-${project.id}',
-                child: Text(project.icon, style: const TextStyle(fontSize: 24)),
+                child: EmojiBadge(emoji: project.icon, color: colorForKey(project.id)),
               ),
               title: Text(project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text(currency.format(project.totalSpent)),
@@ -420,7 +422,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                     DataRow(
                       onSelectChanged: (_) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
                       cells: [
-                        DataCell(Text(project.icon, style: const TextStyle(fontSize: 18))),
+                        DataCell(EmojiBadge(emoji: project.icon, color: colorForKey(project.id), size: 32)),
                         DataCell(Text(project.name)),
                         DataCell(Text(currency.format(project.totalSpent))),
                         DataCell(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_exception.dart';
 import '../models/role.dart';
 import '../state/app_scope.dart';
+import 'common/adaptive_sheet.dart';
 import 'common/error_text.dart';
 import 'common/form_error_text.dart';
 import 'common/loading_button.dart';
@@ -10,9 +11,8 @@ import 'sheet_padding.dart';
 
 /// Returns true if a new account was created.
 Future<bool?> showAddUserSheet(BuildContext context, {required bool canCreateAdmin}) {
-  return showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
+  return showAdaptiveSheet<bool>(
+    context,
     builder: (context) => _AddUserSheet(canCreateAdmin: canCreateAdmin),
   );
 }

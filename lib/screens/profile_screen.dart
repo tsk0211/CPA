@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../state/app_scope.dart';
+import '../widgets/common/colored_avatar.dart';
 import '../widgets/common/confirm_dialog.dart';
 import '../widgets/responsive_center.dart';
 import '../widgets/role_badge.dart';
@@ -31,10 +32,7 @@ class ProfileScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            CircleAvatar(
-              radius: 32,
-              child: Text(user.name.isNotEmpty ? user.name[0].toUpperCase() : "?", style: const TextStyle(fontSize: 24)),
-            ),
+            Center(child: ColoredAvatar(name: user.name, radius: 32)),
             const SizedBox(height: 12),
             Text(
               user.name,

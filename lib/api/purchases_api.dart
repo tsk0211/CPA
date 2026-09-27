@@ -119,6 +119,17 @@ class PurchasesApi {
     return (Paged.fromJson(json, Purchase.fromJson), (json["totalAmount"] as num?)?.toDouble() ?? 0);
   }
 
+  // Daily approved-spend totals for the trailing [days] days, zero-filled —
+  // feeds the Dashboard's spend trend chart. Same scoping as search()/export().
+  Future<List<(DateTime, double)>> trend({int days = 30, List<String>? projectIds}) async {
+    final json = await client.get("/purchases/trend", query: {
+      "days": "$days",
+      if (projectIds != null && projectIds.isNotEmpty) "projectIds": projectIds.join(","),
+    });
+    final points = (json["points"] as List).cast<Map<String, dynamic>>();
+    return [for (final p in points) (DateTime.parse(p["date"] as String), (p["total"] as num).toDouble())];
+  }
+
   Future<(List<int> bytes, String filename)> export({
     required String format,
     List<String>? projectIds,

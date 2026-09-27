@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../models/project.dart';
 import '../state/app_scope.dart';
+import 'common/adaptive_sheet.dart';
 import 'common/confirm_dialog.dart';
 import 'common/loading_button.dart';
 import 'emoji_picker_grid.dart';
@@ -12,9 +13,8 @@ import 'sheet_padding.dart';
 /// autoApproveThreshold is null for a new project (server defaults it to 0)
 /// — the field only shows once a project exists to edit.
 Future<(String, String, double?)?> showAddEditProjectSheet(BuildContext context, {Project? existing}) {
-  return showModalBottomSheet<(String, String, double?)>(
-    context: context,
-    isScrollControlled: true,
+  return showAdaptiveSheet<(String, String, double?)>(
+    context,
     builder: (context) => _AddEditProjectSheet(existing: existing),
   );
 }

@@ -5,6 +5,7 @@ import '../models/purchase.dart';
 import '../models/units.dart';
 import '../offline/pending_purchase.dart';
 import '../state/app_scope.dart';
+import 'common/adaptive_sheet.dart';
 import 'common/error_text.dart';
 import 'common/form_error_text.dart';
 import 'common/loading_button.dart';
@@ -17,9 +18,8 @@ Future<bool?> showAddEditPurchaseSheet(
   required String projectName,
   Purchase? existing,
 }) {
-  return showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
+  return showAdaptiveSheet<bool>(
+    context,
     builder: (context) => _AddEditPurchaseSheet(projectId: projectId, projectName: projectName, existing: existing),
   );
 }

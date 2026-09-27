@@ -14,6 +14,7 @@ import '../widgets/add_user_sheet.dart';
 import '../widgets/audit_entry_tile.dart';
 import '../widgets/breakpoints.dart';
 import '../widgets/common/busy_guard.dart';
+import '../widgets/common/colored_avatar.dart';
 import '../widgets/common/confirm_dialog.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/common/error_text.dart';
@@ -298,7 +299,7 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
         final member = _items[index];
         final busy = isBusy(member.id);
         return ListTile(
-          leading: CircleAvatar(child: Text(member.name.isNotEmpty ? member.name[0].toUpperCase() : "?")),
+          leading: ColoredAvatar(name: member.name),
           title: Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(member.email, maxLines: 1, overflow: TextOverflow.ellipsis),
           trailing: busy ? const InlineSpinner() : RoleBadge(role: member.role),
@@ -317,34 +318,43 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
       );
     }
     return SingleChildScrollView(
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columns: const [
-              DataColumn(label: Text("Name")),
-              DataColumn(label: Text("Email")),
-              DataColumn(label: Text("Role")),
-              DataColumn(label: Text("")),
-            ],
-            rows: [
-              for (final member in _items)
-                DataRow(
-                  cells: [
-                    DataCell(Text(member.name)),
-                    DataCell(Text(member.email)),
-                    DataCell(RoleBadge(role: member.role)),
-                    DataCell(
-                      isBusy(member.id)
-                          ? const InlineSpinner()
-                          : IconButton(icon: const Icon(Icons.more_vert), tooltip: "Actions", onPressed: () => _showUserActions(member)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text("Name")),
+                  DataColumn(label: Text("Email")),
+                  DataColumn(label: Text("Role")),
+                  DataColumn(label: Text("")),
+                ],
+                rows: [
+                  for (final member in _items)
+                    DataRow(
+                      cells: [
+                        DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                          ColoredAvatar(name: member.name, radius: 14),
+                          const SizedBox(width: 10),
+                          Text(member.name),
+                        ])),
+                        DataCell(Text(member.email)),
+                        DataCell(RoleBadge(role: member.role)),
+                        DataCell(
+                          isBusy(member.id)
+                              ? const InlineSpinner()
+                              : IconButton(icon: const Icon(Icons.more_vert), tooltip: "Actions", onPressed: () => _showUserActions(member)),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-            ],
+                ],
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

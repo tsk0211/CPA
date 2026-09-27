@@ -1,30 +1,35 @@
 import 'package:flutter/material.dart';
 
+import 'icon_badge.dart';
 import 'spacing.dart';
 
-/// A small metric tile — icon, big value, label — promoted from
-/// `dashboard_screen.dart`'s original private `_StatCard` into a shared
-/// widget so any future summary tile (e.g. in Reports) can reuse the same
-/// look instead of a new one-off.
+/// A metric tile — colored icon badge, big value, label. `badgeColor` gives
+/// each stat its own identity color (see `theme.dart`'s category palette) so
+/// a row of these reads as distinct metrics rather than four identical gray
+/// icons; omit it to fall back to a plain neutral/emphasized icon.
 class StatCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
   final bool emphasize;
+  final Color? badgeColor;
 
-  const StatCard({super.key, required this.icon, required this.label, required this.value, this.emphasize = false});
+  const StatCard({super.key, required this.icon, required this.label, required this.value, this.emphasize = false, this.badgeColor});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
-      child: Container(
-        width: 220,
+      child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: emphasize ? scheme.tertiary : scheme.onSurfaceVariant),
+            if (badgeColor != null)
+              IconBadge(icon: icon, color: badgeColor!)
+            else
+              Icon(icon, color: emphasize ? scheme.tertiary : scheme.onSurfaceVariant),
             const SizedBox(height: Spacing.sm + 4),
             Text(
               value,

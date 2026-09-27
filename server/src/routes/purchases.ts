@@ -324,6 +324,41 @@ purchasesRouter.get("/search", requireRole("owner", "admin", "analyst"), async (
   res.json({ ...toPagedResult(purchases, total, pageParams), totalAmount: totalAmountAgg[0]?.total ?? 0 });
 });
 
+// Daily approved-spend totals for the trailing [days] days — feeds the
+// Dashboard's spend trend chart. Same approved/non-deleted/projectIds
+// scoping as /search and /export (buildPurchaseFilter) so the chart never
+// shows a different notion of "spend" than the rest of Reports does.
+purchasesRouter.get("/trend", requireRole("owner", "admin", "analyst"), async (req, res) => {
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+  const projectIds = parseProjectIds(req.query.projectIds);
+
+  const from = new Date();
+  from.setUTCHours(0, 0, 0, 0);
+  from.setUTCDate(from.getUTCDate() - (days - 1));
+
+  const filter = buildPurchaseFilter(projectIds, { $gte: from });
+
+  const rows = await Purchase.aggregate<{ _id: string; total: number }>([
+    { $match: filter },
+    { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$purchasedAt" } }, total: { $sum: "$amount" } } },
+    { $sort: { _id: 1 } },
+  ]);
+  const totalsByDay = new Map(rows.map((r) => [r._id, r.total]));
+
+  // Always return one point per day in range, zero-filled — the chart
+  // shouldn't have to guess whether a missing day means "no spend" or "we
+  // forgot to ask," and a client-side line chart wants a dense series.
+  const points: { date: string; total: number }[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(from);
+    d.setUTCDate(from.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    points.push({ date: key, total: totalsByDay.get(key) ?? 0 });
+  }
+
+  res.json({ points });
+});
+
 // --- Reports export (owner, admin, analyst) ---
 //
 // GET /purchases/export?format=csv|xlsx&projectIds=id1,id2&from=ISO&to=ISO&includeAuditTrail=true
