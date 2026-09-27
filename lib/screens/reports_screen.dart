@@ -13,6 +13,7 @@ import '../widgets/common/empty_state.dart';
 import '../widgets/common/error_text.dart';
 import '../widgets/common/form_error_text.dart';
 import '../widgets/common/loading_indicator.dart';
+import '../utils/date_range.dart';
 import '../widgets/project_multi_select_sheet.dart';
 import '../widgets/responsive_center.dart';
 
@@ -115,8 +116,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final (paged, totalAmount) = await AppScope.of(context).purchases.search(
         page: reset ? 1 : _previewPage + 1,
         projectIds: _selectedProjects.map((p) => p.id).toList(),
-        from: from,
-        to: to,
+        from: from == null ? null : startOfLocalDayUtc(from),
+        to: to == null ? null : endOfLocalDayUtc(to),
       );
       if (!mounted || requestId != _previewRequestId) return;
       setState(() {
@@ -154,8 +155,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final (bytes, filename) = await AppScope.of(context).purchases.export(
         format: _format,
         projectIds: _selectedProjects.map((p) => p.id).toList(),
-        from: from,
-        to: to,
+        from: from == null ? null : startOfLocalDayUtc(from),
+        to: to == null ? null : endOfLocalDayUtc(to),
         includeAuditTrail: _includeAuditTrail,
       );
 

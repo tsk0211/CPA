@@ -20,6 +20,7 @@ import '../widgets/common/error_text.dart';
 import '../widgets/common/form_error_text.dart';
 import '../widgets/common/loading_indicator.dart';
 import '../widgets/common/skeleton.dart';
+import '../utils/date_range.dart';
 import '../widgets/responsive_center.dart';
 import '../widgets/role_badge.dart';
 
@@ -422,8 +423,8 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
             actorId: _selectedPerson?.id,
             action: _selectedAction,
             projectId: _selectedProject?.id,
-            from: _dateRange?.start,
-            to: _dateRange?.end,
+            from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
+            to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
           );
       if (!mounted) return;
       setState(() {
@@ -462,8 +463,8 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
             actorId: _selectedPerson?.id,
             action: _selectedAction,
             projectId: _selectedProject?.id,
-            from: _dateRange?.start,
-            to: _dateRange?.end,
+            from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
+            to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
           );
       // XFile.fromData (not a real File path) — works on every platform,
       // including web where there's no filesystem to write a temp file to.
@@ -472,7 +473,7 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
         text: "CPA audit log export",
       );
     } catch (e) {
-      setState(() => _exportError = _messageFor(e));
+      if (mounted) setState(() => _exportError = _messageFor(e));
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -617,8 +618,8 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
                         actorId: _selectedPerson?.id,
                         action: _selectedAction,
                         projectId: _selectedProject?.id,
-                        from: _dateRange?.start,
-                        to: _dateRange?.end,
+                        from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
+                        to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
                       );
                   if (!mounted) return;
                   setState(() {

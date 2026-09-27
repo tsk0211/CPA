@@ -11,7 +11,9 @@ export const authRouter = Router();
 // (see routes/users.ts) with a temp password they hand to the teammate.
 authRouter.post("/login", async (req, res) => {
   const { email, password, rememberMe } = req.body as { email?: string; password?: string; rememberMe?: boolean };
-  if (!email || !password) return res.status(400).json({ error: "email and password are required" });
+  if (typeof email !== "string" || !email || typeof password !== "string" || !password) {
+    return res.status(400).json({ error: "email and password are required" });
+  }
 
   const user = await User.findOne({ email: email.toLowerCase().trim(), deletedAt: null });
   if (!user) return res.status(401).json({ error: "invalid email or password" });
@@ -34,7 +36,7 @@ authRouter.post("/login", async (req, res) => {
 // see src/tokens.ts for the reuse-detection this enables.
 authRouter.post("/refresh", async (req, res) => {
   const { refreshToken } = req.body as { refreshToken?: string };
-  if (!refreshToken) return res.status(400).json({ error: "refreshToken is required" });
+  if (typeof refreshToken !== "string" || !refreshToken) return res.status(400).json({ error: "refreshToken is required" });
 
   const result = await rotateRefreshToken(refreshToken);
   if (!result.ok) {
@@ -71,7 +73,13 @@ authRouter.post("/logout", requireAuth, async (req, res) => {
 // "change my password" action later — same endpoint either way.
 authRouter.post("/change-password", requireAuth, async (req: AuthedRequest, res) => {
   const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
-  if (!currentPassword || !newPassword || newPassword.length < securityConfig.minPasswordLength) {
+  if (
+    typeof currentPassword !== "string" ||
+    !currentPassword ||
+    typeof newPassword !== "string" ||
+    !newPassword ||
+    newPassword.length < securityConfig.minPasswordLength
+  ) {
     return res
       .status(400)
       .json({ error: `currentPassword and a newPassword of at least ${securityConfig.minPasswordLength} characters are required` });

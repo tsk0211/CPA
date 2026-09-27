@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { Router } from "express";
+import { buildDateFilter } from "../dateFilter.js";
 import { blockIfMustChangePassword, requireAuth, requireRole } from "../middleware/auth.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { parsePageParams, toPagedResult } from "../pagination.js";
@@ -8,13 +9,6 @@ import { Purchase } from "../models/Purchase.js";
 export const auditLogRouter = Router();
 
 auditLogRouter.use(requireAuth, blockIfMustChangePassword, requireRole("owner", "admin", "analyst"));
-
-function buildDateFilter(from: unknown, to: unknown): Record<string, Date> {
-  const filter: Record<string, Date> = {};
-  if (typeof from === "string" && from) filter.$gte = new Date(from);
-  if (typeof to === "string" && to) filter.$lte = new Date(to);
-  return filter;
-}
 
 // Shared by the list and export endpoints so filtering never drifts between
 // what you see on screen and what you get in the export.

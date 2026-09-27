@@ -74,14 +74,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Future<void> _loadMore() async {
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
-    final result = await AppScope.of(context).purchases.pending(page: _page + 1, limit: 50);
-    if (!mounted) return;
-    setState(() {
-      _items.addAll(result.items);
-      _page += 1;
-      _hasMore = result.hasMore;
-      _loading = false;
-    });
+    try {
+      final result = await AppScope.of(context).purchases.pending(page: _page + 1, limit: 50);
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(result.items);
+        _page += 1;
+        _hasMore = result.hasMore;
+      });
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } on NetworkUnavailableException {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(networkUnavailableMessage)));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   Future<void> _approve(Purchase purchase) async {

@@ -50,8 +50,11 @@ services:
         value: "30"
       - key: REFRESH_TOKEN_TTL_DEFAULT_DAYS
         value: "1"
+      # Tightened from "*" now that a real web frontend exists (GitHub
+      # Pages) — the mobile app isn't subject to CORS at all, so this only
+      # ever mattered for browser-based clients. See security review notes.
       - key: CORS_ORIGIN
-        value: "*"
+        value: "https://tsk0211.github.io"
       - key: LOGIN_RATE_LIMIT_WINDOW_MS
         value: "900000"
       - key: LOGIN_RATE_LIMIT_MAX

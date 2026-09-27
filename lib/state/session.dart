@@ -78,11 +78,13 @@ class Session extends ChangeNotifier {
         await cache.saveUser(_user!);
         _status = _user!.mustChangePassword ? SessionStatus.mustChangePassword : SessionStatus.loggedIn;
         notifyListeners();
+        return; // only a successful reconcile stops retrying
       } catch (_) {
-        // Stay on cached data this session; a dead refresh token is caught
-        // by the normal request pipeline via onSessionExpired regardless.
+        // A live server but a failed /me is worth retrying too — stay on
+        // cached data for now and try again next iteration. A dead refresh
+        // token is caught by the normal request pipeline via
+        // onSessionExpired regardless of what happens here.
       }
-      return;
     }
   }
 

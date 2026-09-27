@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/project.dart';
+import '../state/app_scope.dart';
+import 'common/confirm_dialog.dart';
+import 'common/loading_button.dart';
 import 'emoji_picker_grid.dart';
 import 'sheet_padding.dart';
 
@@ -30,6 +34,7 @@ class _AddEditProjectSheetState extends State<_AddEditProjectSheet> {
   );
   late String _icon = widget.existing?.icon ?? "📁";
   String? _nameError;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -38,12 +43,44 @@ class _AddEditProjectSheetState extends State<_AddEditProjectSheet> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (_nameController.text.trim().isEmpty) {
       setState(() => _nameError = "Project name is required.");
       return;
     }
-    final threshold = widget.existing == null ? null : double.tryParse(_thresholdController.text.trim()) ?? 0;
+
+    final existing = widget.existing;
+    final threshold = existing == null ? null : double.tryParse(_thresholdController.text.trim()) ?? 0;
+
+    if (existing != null && threshold != null && threshold != existing.autoApproveThreshold) {
+      setState(() => _saving = true);
+      try {
+        final (count, totalAmount) = await AppScope.of(context).projects.autoApproveThresholdPreview(existing.id, threshold);
+        if (!mounted) return;
+        if (count > 0) {
+          final currency = NumberFormat.simpleCurrency();
+          final confirmed = await confirmAction(
+            context,
+            title: "Approve $count pending purchase${count == 1 ? '' : 's'}?",
+            message: "Changing the auto-approve threshold to ${currency.format(threshold)} will immediately approve "
+                "$count pending purchase${count == 1 ? '' : 's'} totaling ${currency.format(totalAmount)}, "
+                "since ${count == 1 ? 'it is' : 'they are'} now at or under the new threshold.",
+            confirmLabel: "Change & approve",
+          );
+          if (!confirmed) {
+            if (mounted) setState(() => _saving = false);
+            return;
+          }
+        }
+      } catch (_) {
+        // Best-effort preview only — a failure here (e.g. offline) shouldn't
+        // block the rest of the edit. The server applies the exact same
+        // rule on save regardless of whether this preview succeeded.
+      }
+      if (mounted) setState(() => _saving = false);
+    }
+
+    if (!mounted) return;
     Navigator.of(context).pop((_nameController.text.trim(), _icon, threshold));
   }
 
@@ -95,7 +132,7 @@ class _AddEditProjectSheetState extends State<_AddEditProjectSheet> {
             ),
           ],
           const SizedBox(height: 16),
-          FilledButton(onPressed: _save, child: const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Text("Save"))),
+          LoadingFilledButton(loading: _saving, onPressed: _save, child: const Text("Save")),
         ],
       ),
     );

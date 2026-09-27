@@ -10,6 +10,7 @@ import '../widgets/common/error_text.dart';
 import '../widgets/common/skeleton.dart';
 import '../widgets/detail_row.dart';
 import '../widgets/responsive_center.dart';
+import '../widgets/status_badge.dart';
 
 String _messageFor(Object error) {
   if (error is ApiException) return error.message;
@@ -149,7 +150,15 @@ class _ActivityScreenState extends State<ActivityScreen> {
             final purchase = _items[index];
             return ListTile(
               leading: Text(purchase.projectIcon ?? "📁", style: const TextStyle(fontSize: 22)),
-              title: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Row(
+                children: [
+                  Flexible(child: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  if (purchase.status != PurchaseStatus.approved) ...[
+                    const SizedBox(width: 6),
+                    StatusBadge(status: purchase.status),
+                  ],
+                ],
+              ),
               subtitle: Text(
                 [
                   purchase.projectName ?? '',
@@ -188,6 +197,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 columns: const [
                   DataColumn(label: Text("Project")),
                   DataColumn(label: Text("Description")),
+                  DataColumn(label: Text("Status")),
                   DataColumn(label: Text("Amount"), numeric: true),
                   DataColumn(label: Text("Logged by")),
                   DataColumn(label: Text("Date")),
@@ -203,6 +213,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                           Text(purchase.projectName ?? "—"),
                         ])),
                         DataCell(SizedBox(width: 260, child: Text(purchase.description, overflow: TextOverflow.ellipsis))),
+                        DataCell(StatusBadge(status: purchase.status)),
                         DataCell(Text(currency.format(purchase.amount))),
                         DataCell(Text(purchase.createdByName ?? "—")),
                         DataCell(Text(dateFormat.format(purchase.purchasedAt))),

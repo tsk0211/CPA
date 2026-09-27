@@ -24,7 +24,9 @@ class Project {
         name: json["name"] as String,
         icon: json["icon"] as String? ?? "📁",
         createdBy: json["createdBy"] as String,
-        createdAt: DateTime.parse(json["createdAt"] as String),
+        // See audit_entry.dart's fromJson for why .toLocal() belongs here,
+        // at the parse boundary, rather than at each display call site.
+        createdAt: DateTime.parse(json["createdAt"] as String).toLocal(),
         totalSpent: (json["totalSpent"] as num?)?.toDouble() ?? 0,
         autoApproveThreshold: (json["autoApproveThreshold"] as num?)?.toDouble() ?? 0,
       );

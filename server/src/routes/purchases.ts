@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { Router } from "express";
 import { logActivity } from "../audit.js";
+import { buildDateFilter } from "../dateFilter.js";
 import { blockIfMustChangePassword, requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { Project } from "../models/Project.js";
@@ -426,13 +427,6 @@ purchasesRouter.get("/export", requireRole("owner", "admin", "analyst"), async (
   await workbook.xlsx.write(res);
   res.end();
 });
-
-function buildDateFilter(from: unknown, to: unknown): Record<string, Date> {
-  const filter: Record<string, Date> = {};
-  if (typeof from === "string" && from) filter.$gte = new Date(from);
-  if (typeof to === "string" && to) filter.$lte = new Date(to);
-  return filter;
-}
 
 function sendCsv(res: import("express").Response, filename: string, rows: Record<string, string | number>[]) {
   const headers =

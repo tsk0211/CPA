@@ -68,8 +68,10 @@ class Purchase {
       notes: json["notes"] as String?,
       createdBy: rawCreatedBy is Map ? rawCreatedBy["_id"] as String : rawCreatedBy as String,
       createdByName: rawCreatedBy is Map ? rawCreatedBy["name"] as String? : null,
-      purchasedAt: DateTime.parse(json["purchasedAt"] as String),
-      editedAt: json["editedAt"] != null ? DateTime.parse(json["editedAt"] as String) : null,
+      // See audit_entry.dart's fromJson for why .toLocal() belongs here, at
+      // the parse boundary, rather than at each display call site.
+      purchasedAt: DateTime.parse(json["purchasedAt"] as String).toLocal(),
+      editedAt: json["editedAt"] != null ? DateTime.parse(json["editedAt"] as String).toLocal() : null,
       status: PurchaseStatus.parse(json["status"] as String?),
       rejectionReason: json["rejectionReason"] as String?,
       capturedOffline: json["capturedOffline"] as bool? ?? false,
