@@ -7,8 +7,12 @@
 # seeding steps that go alongside this.
 
 services:
+  # Distinct name from the v1.0.0 service ("cpa-server", live as
+  # cpa-server-3js1) so this Blueprint creates a brand-new service +
+  # database rather than colliding with the live one — v1.0.0 and v1.1.0
+  # run side by side until this branch is ready to replace it.
   - type: web
-    name: cpa-server
+    name: cpa-server-v1-1-0
     runtime: node
     plan: free
     rootDir: server

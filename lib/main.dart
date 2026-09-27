@@ -1,4 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'api/api_client.dart';
@@ -10,6 +11,7 @@ import 'offline/offline_queue.dart';
 import 'screens/change_password_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'screens/public/public_site_shell.dart';
 import 'state/app_scope.dart';
 import 'state/session.dart';
 import 'theme.dart';
@@ -89,7 +91,10 @@ class _CpaAppState extends State<CpaApp> {
               case SessionStatus.loading:
                 child = const Scaffold(body: Center(child: CircularProgressIndicator()));
               case SessionStatus.loggedOut:
-                child = const LoginScreen();
+                // The public marketing site (Home/About Us) only exists on
+                // the web build — the mobile app goes straight to Login as
+                // it always has, no public storefront to show on a phone.
+                child = kIsWeb ? const PublicSiteShell() : const LoginScreen();
               case SessionStatus.mustChangePassword:
                 child = const ChangePasswordScreen(forced: true);
               case SessionStatus.loggedIn:

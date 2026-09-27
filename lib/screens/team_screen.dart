@@ -1,8 +1,7 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../api/api_exception.dart';
@@ -356,10 +355,12 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
             from: _dateRange?.start,
             to: _dateRange?.end,
           );
-      final dir = await getTemporaryDirectory();
-      final file = File("${dir.path}/$filename");
-      await file.writeAsBytes(bytes);
-      await Share.shareXFiles([XFile(file.path)], text: "CPA audit log export");
+      // XFile.fromData (not a real File path) — works on every platform,
+      // including web where there's no filesystem to write a temp file to.
+      await Share.shareXFiles(
+        [XFile.fromData(Uint8List.fromList(bytes), name: filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")],
+        text: "CPA audit log export",
+      );
     } on ApiException catch (e) {
       setState(() => _exportError = e.message);
     } on NetworkUnavailableException {
