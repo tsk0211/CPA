@@ -20,10 +20,14 @@ Future<T?> showAdaptiveSheet<T>(
   if (isDesktop(context)) {
     return showDialog<T>(
       context: context,
-      builder: (context) => Dialog(
+      builder: (dialogContext) => Dialog(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: desktopMaxWidth),
-          child: builder(context),
+          // Capped height too, with a scroll fallback — the sheet content
+          // was designed for a bottom sheet that can extend past the fold,
+          // so a short/resized desktop window must still be able to scroll
+          // it instead of overflowing.
+          constraints: BoxConstraints(maxWidth: desktopMaxWidth, maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9),
+          child: SingleChildScrollView(child: builder(dialogContext)),
         ),
       ),
     );

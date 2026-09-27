@@ -122,8 +122,14 @@ class PurchasesApi {
   // Daily approved-spend totals for the trailing [days] days, zero-filled —
   // feeds the Dashboard's spend trend chart. Same scoping as search()/export().
   Future<List<(DateTime, double)>> trend({int days = 30, List<String>? projectIds}) async {
+    final offset = DateTime.now().timeZoneOffset;
+    final sign = offset.isNegative ? "-" : "+";
+    final abs = offset.abs();
+    final tzOffset = "$sign${abs.inHours.toString().padLeft(2, '0')}:${(abs.inMinutes % 60).toString().padLeft(2, '0')}";
+
     final json = await client.get("/purchases/trend", query: {
       "days": "$days",
+      "tzOffset": tzOffset,
       if (projectIds != null && projectIds.isNotEmpty) "projectIds": projectIds.join(","),
     });
     final points = (json["points"] as List).cast<Map<String, dynamic>>();

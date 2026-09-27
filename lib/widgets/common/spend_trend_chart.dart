@@ -25,15 +25,16 @@ class SpendTrendChart extends StatelessWidget {
     final maxY = points.map((p) => p.$2).fold<double>(0, (a, b) => a > b ? a : b);
     final spots = [for (var i = 0; i < points.length; i++) FlSpot(i.toDouble(), points[i].$2)];
     final labelEvery = (points.length / 5).ceil().clamp(1, points.length);
+    final effectiveMaxY = maxY == 0 ? 1.0 : maxY * 1.2;
 
     return LineChart(
       LineChartData(
         minY: 0,
-        maxY: maxY == 0 ? 1 : maxY * 1.2,
+        maxY: effectiveMaxY,
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
-          horizontalInterval: (maxY == 0 ? 1 : maxY * 1.2) / 4,
+          horizontalInterval: effectiveMaxY / 4,
           getDrawingHorizontalLine: (_) => FlLine(color: scheme.outlineVariant.withValues(alpha: 0.4), strokeWidth: 1),
         ),
         borderData: FlBorderData(show: false),

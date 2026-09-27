@@ -57,16 +57,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final startOfMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
     try {
-      // Sequential rather than Future.wait: the calls return different
-      // types (some role-gated and nullable), and this is a handful of
-      // cheap limit=1 lookups — not worth the type gymnastics to
-      // parallelize for a dashboard's initial load.
-      final projects = await scope.projects.list(page: 1, limit: 1);
-      final monthSpend = role.canExport ? (await scope.purchases.search(page: 1, limit: 1, from: startOfMonth)).$2 : null;
-      final pending = role.canReviewPurchases ? await scope.purchases.pending(page: 1, limit: 1) : null;
-      final team = role.canManageUsers ? await scope.users.list(page: 1, limit: 1) : null;
-      final recent = await scope.purchases.recent(page: 1, limit: 8);
-      final trend = role.canExport ? await scope.purchases.trend(days: 30) : null;
+      // Each call is kicked off here (a Future starts running the moment
+      // it's created, not when awaited) and only awaited below, so all of
+      // these run concurrently — the limit=1 lookups are cheap, but
+      // trend() is a full 30-day aggregation and shouldn't sit at the end
+      // of a serial chain behind four other requests.
+      final projectsFuture = scope.projects.list(page: 1, limit: 1);
+      final monthSpendFuture = role.canExport ? scope.purchases.search(page: 1, limit: 1, from: startOfMonth) : null;
+      final pendingFuture = role.canReviewPurchases ? scope.purchases.pending(page: 1, limit: 1) : null;
+      final teamFuture = role.canManageUsers ? scope.users.list(page: 1, limit: 1) : null;
+      final recentFuture = scope.purchases.recent(page: 1, limit: 8);
+      final trendFuture = role.canExport ? scope.purchases.trend(days: 30) : null;
+
+      final projects = await projectsFuture;
+      final monthSpend = monthSpendFuture == null ? null : (await monthSpendFuture).$2;
+      final pending = pendingFuture == null ? null : await pendingFuture;
+      final team = teamFuture == null ? null : await teamFuture;
+      final recent = await recentFuture;
+      final trend = trendFuture == null ? null : await trendFuture;
       if (!mounted) return;
       setState(() {
         _activeProjects = projects.total;

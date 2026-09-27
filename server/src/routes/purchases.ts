@@ -332,15 +332,29 @@ purchasesRouter.get("/trend", requireRole("owner", "admin", "analyst"), async (r
   const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
   const projectIds = parseProjectIds(req.query.projectIds);
 
-  const from = new Date();
-  from.setUTCHours(0, 0, 0, 0);
-  from.setUTCDate(from.getUTCDate() - (days - 1));
+  // The client sends its own UTC offset (e.g. "+05:30") so "day" here means
+  // the user's local calendar day, not a UTC day — the same class of bug
+  // fixed for Reports/Team's date filters (see lib/utils/date_range.dart):
+  // naive UTC bucketing silently shifts day boundaries by the user's offset
+  // (5.5 hours for India), so "today" in the chart wouldn't match "today"
+  // for the person looking at it.
+  const tzOffset = /^[+-]\d{2}:\d{2}$/.test(String(req.query.tzOffset)) ? String(req.query.tzOffset) : "+00:00";
+  const offsetSign = tzOffset[0] === "-" ? -1 : 1;
+  const offsetMinutes = offsetSign * (Number(tzOffset.slice(1, 3)) * 60 + Number(tzOffset.slice(4, 6)));
+
+  // Local midnight [days-1] days ago, expressed as the real UTC instant it
+  // corresponds to — shift "now" into the user's local frame to find that
+  // local midnight, then shift back to get an actual point in time.
+  const localNow = new Date(Date.now() + offsetMinutes * 60000);
+  localNow.setUTCHours(0, 0, 0, 0);
+  localNow.setUTCDate(localNow.getUTCDate() - (days - 1));
+  const from = new Date(localNow.getTime() - offsetMinutes * 60000);
 
   const filter = buildPurchaseFilter(projectIds, { $gte: from });
 
   const rows = await Purchase.aggregate<{ _id: string; total: number }>([
     { $match: filter },
-    { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$purchasedAt" } }, total: { $sum: "$amount" } } },
+    { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$purchasedAt", timezone: tzOffset } }, total: { $sum: "$amount" } } },
     { $sort: { _id: 1 } },
   ]);
   const totalsByDay = new Map(rows.map((r) => [r._id, r.total]));
@@ -350,8 +364,8 @@ purchasesRouter.get("/trend", requireRole("owner", "admin", "analyst"), async (r
   // forgot to ask," and a client-side line chart wants a dense series.
   const points: { date: string; total: number }[] = [];
   for (let i = 0; i < days; i++) {
-    const d = new Date(from);
-    d.setUTCDate(from.getUTCDate() + i);
+    const d = new Date(localNow);
+    d.setUTCDate(localNow.getUTCDate() + i);
     const key = d.toISOString().slice(0, 10);
     points.push({ date: key, total: totalsByDay.get(key) ?? 0 });
   }
