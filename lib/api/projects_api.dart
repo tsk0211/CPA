@@ -25,8 +25,12 @@ class ProjectsApi {
     return Project.fromJson(json);
   }
 
-  Future<Project> update(String id, String name, String icon) async {
-    final json = await client.patch("/projects/$id", {"name": name, "icon": icon});
+  Future<Project> update(String id, String name, String icon, {double? autoApproveThreshold}) async {
+    final json = await client.patch("/projects/$id", {
+      "name": name,
+      "icon": icon,
+      if (autoApproveThreshold != null) "autoApproveThreshold": autoApproveThreshold,
+    });
     return Project.fromJson(json);
   }
 

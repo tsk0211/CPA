@@ -7,6 +7,7 @@ import 'detail_row.dart';
 const _actionLabels = {
   "project.create": "created project",
   "project.rename": "edited project",
+  "project.auto_approve_threshold_change": "changed the auto-approve threshold",
   "project.delete": "deleted project",
   "purchase.create": "logged a purchase",
   "purchase.edit": "edited a purchase",

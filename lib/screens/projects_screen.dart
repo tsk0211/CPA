@@ -121,7 +121,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     final scope = AppScope.of(context);
     final result = await showAddEditProjectSheet(context, existing: project);
     if (result == null) return;
-    await scope.projects.update(project.id, result.$1, result.$2);
+    await scope.projects.update(project.id, result.$1, result.$2, autoApproveThreshold: result.$3);
     if (mounted) _loadFirstPage();
   }
 

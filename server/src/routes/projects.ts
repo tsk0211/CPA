@@ -76,10 +76,15 @@ projectsRouter.post("/", requireRole("owner", "admin"), async (req: AuthedReques
 
 // Renaming and re-iconing a project are the same "edit" action from the
 // UI's perspective (one sheet, both fields) so they share one endpoint and
-// one audit entry.
+// one audit entry. autoApproveThreshold is a separate, optional field on
+// the same request but gets its own audit entry (a financial-control
+// change, not a cosmetic edit) — see models/AuditLog.ts.
 projectsRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
-  const { name, icon } = req.body as { name?: string; icon?: string };
+  const { name, icon, autoApproveThreshold } = req.body as { name?: string; icon?: string; autoApproveThreshold?: number };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+  if (autoApproveThreshold !== undefined && (typeof autoApproveThreshold !== "number" || autoApproveThreshold < 0)) {
+    return res.status(400).json({ error: "autoApproveThreshold must be a non-negative number" });
+  }
 
   const project = await Project.findOne({ _id: req.params.id, deletedAt: null });
   if (!project) return res.status(404).json({ error: "project not found" });
@@ -96,6 +101,20 @@ projectsRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRe
     before,
     after: { name: project.name, icon: project.icon },
   });
+
+  if (autoApproveThreshold !== undefined && autoApproveThreshold !== project.autoApproveThreshold) {
+    const thresholdBefore = project.autoApproveThreshold;
+    project.autoApproveThreshold = autoApproveThreshold;
+    await project.save();
+
+    await logActivity(req, {
+      action: "project.auto_approve_threshold_change",
+      entityType: "project",
+      entityId: project._id,
+      before: { autoApproveThreshold: thresholdBefore },
+      after: { autoApproveThreshold: project.autoApproveThreshold },
+    });
+  }
 
   res.json(project);
 });

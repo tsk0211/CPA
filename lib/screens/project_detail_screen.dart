@@ -52,7 +52,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
     final scope = AppScope.of(context);
     final result = await showAddEditProjectSheet(context, existing: _project);
     if (result == null) return;
-    await scope.projects.update(_project.id, result.$1, result.$2);
+    await scope.projects.update(_project.id, result.$1, result.$2, autoApproveThreshold: result.$3);
     await _refreshProject();
   }
 

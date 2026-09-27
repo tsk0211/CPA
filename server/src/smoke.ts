@@ -391,6 +391,78 @@ async function main() {
   const memberAuditLog = await req("/audit-log", {}, memberToken0);
   assert(memberAuditLog.status === 403, "member cannot read audit log");
 
+  // --- Audit log filters (person/action/date) + export ---
+
+  const meRes = await req("/auth/me", {}, adminToken0);
+  const adminId = meRes.body.id;
+
+  const byActor = await req(`/audit-log?actorId=${adminId}`, {}, adminToken0);
+  assert(
+    byActor.status === 200 && (byActor.body.items as { actorId: string }[]).every((a) => a.actorId === adminId),
+    "audit log filters by actorId (person)",
+  );
+
+  const byAction = await req("/audit-log?action=purchase.approve", {}, adminToken0);
+  assert(
+    byAction.status === 200 && (byAction.body.items as { action: string }[]).every((a) => a.action === "purchase.approve"),
+    "audit log filters by action",
+  );
+
+  const farFuture = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const byDateExcludesEverything = await req(`/audit-log?from=${farFuture}`, {}, adminToken0);
+  assert(byDateExcludesEverything.status === 200 && byDateExcludesEverything.body.items.length === 0, "audit log date filter (from in the future) excludes existing entries");
+
+  const combinedFilter = await req(`/audit-log?actorId=${adminId}&action=project.create`, {}, adminToken0);
+  assert(
+    combinedFilter.status === 200 && combinedFilter.body.items.length > 0 && combinedFilter.body.items.every((a: { action: string }) => a.action === "project.create"),
+    "audit log filters combine (actorId + action) with AND",
+  );
+
+  const auditExport = await reqBinary("/audit-log/export", adminToken0);
+  assert(
+    auditExport.status === 200 &&
+      auditExport.contentType?.includes("spreadsheetml") === true &&
+      auditExport.byteLength > 0,
+    "audit log exports as a non-empty .xlsx workbook",
+  );
+
+  const memberAuditExport = await reqBinary("/audit-log/export", memberToken0);
+  assert(memberAuditExport.status === 403, "member cannot export the audit log");
+
+  // --- Per-project auto-approve threshold ---
+
+  const thresholdProject = await req("/projects", { method: "POST", body: JSON.stringify({ name: "Small Repairs" }) }, adminToken0);
+  const thresholdProjectId = thresholdProject.body._id;
+  assert(thresholdProject.body.autoApproveThreshold === 0, "a new project defaults autoApproveThreshold to 0 (always review)");
+
+  const raiseThreshold = await req(
+    `/projects/${thresholdProjectId}`,
+    { method: "PATCH", body: JSON.stringify({ name: "Small Repairs", icon: "🔧", autoApproveThreshold: 100 }) },
+    adminToken0,
+  );
+  assert(raiseThreshold.status === 200 && raiseThreshold.body.autoApproveThreshold === 100, "admin raises a project's auto-approve threshold");
+
+  const thresholdAuditLog = await req(`/audit-log?projectId=${thresholdProjectId}&action=project.auto_approve_threshold_change`, {}, adminToken0);
+  const thresholdEntry = thresholdAuditLog.body.items[0] as { before: { autoApproveThreshold: number }; after: { autoApproveThreshold: number } };
+  assert(
+    thresholdAuditLog.body.items.length === 1 && thresholdEntry.before.autoApproveThreshold === 0 && thresholdEntry.after.autoApproveThreshold === 100,
+    "raising the threshold logs a from -> to audit entry",
+  );
+
+  const underThreshold = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId: thresholdProjectId, amount: 50, description: "Small hardware", idempotencyKey: "idem-small-1" }) },
+    memberToken0,
+  );
+  assert(underThreshold.body.status === "approved", "a member's purchase at or under the threshold auto-approves");
+
+  const overThreshold = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId: thresholdProjectId, amount: 150, description: "Bigger hardware", idempotencyKey: "idem-big-1" }) },
+    memberToken0,
+  );
+  assert(overThreshold.body.status === "pending", "a member's purchase over the threshold still enters the review queue");
+
   // Team user list is paginated + searchable too.
   const searchedUsers = await req("/users?search=Admin", {}, ownerToken);
   assert(

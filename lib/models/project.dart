@@ -5,6 +5,9 @@ class Project {
   final String createdBy;
   final DateTime createdAt;
   final double totalSpent;
+  // A Member's purchase at or under this amount auto-approves instead of
+  // entering the review queue. Owner/Admin manage this per project.
+  final double autoApproveThreshold;
 
   Project({
     required this.id,
@@ -13,6 +16,7 @@ class Project {
     required this.createdBy,
     required this.createdAt,
     required this.totalSpent,
+    required this.autoApproveThreshold,
   });
 
   factory Project.fromJson(Map<String, dynamic> json) => Project(
@@ -22,5 +26,6 @@ class Project {
         createdBy: json["createdBy"] as String,
         createdAt: DateTime.parse(json["createdAt"] as String),
         totalSpent: (json["totalSpent"] as num?)?.toDouble() ?? 0,
+        autoApproveThreshold: (json["autoApproveThreshold"] as num?)?.toDouble() ?? 0,
       );
 }

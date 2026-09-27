@@ -50,7 +50,10 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
   // Owner/admin can already edit or delete any purchase outright, so making
   // them review their own entries would just be friction — only a Member's
   // purchase enters the pending queue for someone else to approve/reject.
-  const autoApprove = req.user!.role === "owner" || req.user!.role === "admin";
+  // A Member's purchase at or under the project's autoApproveThreshold also
+  // skips the queue — see models/Project.ts.
+  const autoApprove =
+    req.user!.role === "owner" || req.user!.role === "admin" || amount <= project.autoApproveThreshold;
 
   let purchase;
   try {
