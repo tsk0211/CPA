@@ -55,7 +55,8 @@ class TeamScreen extends StatefulWidget {
   State<TeamScreen> createState() => _TeamScreenState();
 }
 
-class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateMixin {
+class _TeamScreenState extends State<TeamScreen>
+    with SingleTickerProviderStateMixin {
   TabController? _tabController;
 
   @override
@@ -64,17 +65,32 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     if (role.canManageUsers) {
       _tabController ??= TabController(length: 2, vsync: this);
       return Scaffold(
-        appBar: AppBar(title: const Text("Team"), bottom: TabBar(controller: _tabController, tabs: const [Tab(text: "Users"), Tab(text: "Activity")])),
+        appBar: AppBar(
+          title: const Text("Team"),
+          bottom: TabBar(
+            controller: _tabController,
+            tabs: const [
+              Tab(text: "Users"),
+              Tab(text: "Activity"),
+            ],
+          ),
+        ),
         body: ResponsiveCenter(
           maxWidth: isDesktop(context) ? 1100 : 720,
-          child: TabBarView(controller: _tabController, children: const [_UsersTab(), _GlobalActivityTab()]),
+          child: TabBarView(
+            controller: _tabController,
+            children: const [_UsersTab(), _GlobalActivityTab()],
+          ),
         ),
       );
     }
     // Analyst: Team screen exists but only the Activity segment is usable.
     return Scaffold(
       appBar: AppBar(title: const Text("Team")),
-      body: ResponsiveCenter(maxWidth: isDesktop(context) ? 1100 : 720, child: const _GlobalActivityTab()),
+      body: ResponsiveCenter(
+        maxWidth: isDesktop(context) ? 1100 : 720,
+        child: const _GlobalActivityTab(),
+      ),
     );
   }
 
@@ -120,12 +136,14 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
 
   void _showError(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_messageFor(error))));
   }
 
   void _showSuccess(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _load(String search) async {
@@ -151,7 +169,9 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
       final result = await scope.users.list(search: search);
       if (!mounted) return;
       setState(() => _items = result.items);
-      if (isInitialUnfilteredLoad) unawaited(scope.cache.saveTeam(result.items));
+      if (isInitialUnfilteredLoad) {
+        unawaited(scope.cache.saveTeam(result.items));
+      }
     } catch (e) {
       if (mounted) setState(() => _error = _messageFor(e));
     } finally {
@@ -166,7 +186,10 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
 
   Future<void> _addUser() async {
     final role = AppScope.of(context).session.user!.role;
-    final created = await showAddUserSheet(context, canCreateAdmin: role == Role.owner);
+    final created = await showAddUserSheet(
+      context,
+      canCreateAdmin: role == Role.owner,
+    );
     if (created == true) _load(_searchController.text);
   }
 
@@ -179,7 +202,11 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
     final canAct = actorIsOwner || target.role != Role.admin;
     if (!canAct) return;
 
-    final assignable = [Role.member, Role.analyst, if (actorIsOwner) Role.admin].where((r) => r != target.role).toList();
+    final assignable = [
+      Role.member,
+      Role.analyst,
+      if (actorIsOwner) Role.admin,
+    ].where((r) => r != target.role).toList();
 
     final action = await showModalBottomSheet<Object>(
       context: context,
@@ -188,10 +215,20 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final r in assignable)
-              ListTile(leading: const Icon(Icons.swap_horiz), title: Text("Make ${r.label}"), onTap: () => Navigator.pop(context, r)),
+              ListTile(
+                leading: const Icon(Icons.swap_horiz),
+                title: Text("Make ${r.label}"),
+                onTap: () => Navigator.pop(context, r),
+              ),
             ListTile(
-              leading: Icon(Icons.person_off_outlined, color: Theme.of(context).colorScheme.error),
-              title: Text("Deactivate", style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              leading: Icon(
+                Icons.person_off_outlined,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                "Deactivate",
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               onTap: () => Navigator.pop(context, "deactivate"),
             ),
           ],
@@ -233,7 +270,15 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
 
   @override
   Widget build(BuildContext context) {
+    // crossAxisAlignment.stretch: without it, this Column's default center
+    // alignment gives the Expanded body a LOOSE width constraint, so a
+    // naturally-narrow child deep inside (the table's Card, which shrinks
+    // to its own content width) ends up centered in the page instead of
+    // left-aligned under the search bar above it — stretch makes every
+    // direct child (including the body) get the Column's full width, tight,
+    // removing that ambiguity.
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
@@ -242,13 +287,21 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
               Expanded(
                 child: TextField(
                   controller: _searchController,
-                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: "Search team…", isDense: true),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
+                    hintText: "Search team…",
+                    isDense: true,
+                  ),
                   onChanged: _onSearchChanged,
                 ),
               ),
               if (isDesktop(context)) ...[
                 const SizedBox(width: 12),
-                FilledButton.icon(onPressed: _addUser, icon: const Icon(Icons.person_add_alt), label: const Text("New account")),
+                FilledButton.icon(
+                  onPressed: _addUser,
+                  icon: const Icon(Icons.person_add_alt),
+                  label: const Text("New account"),
+                ),
               ],
             ],
           ),
@@ -273,12 +326,17 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
         icon: Icons.error_outline,
         title: "Couldn't load the team",
         subtitle: _error,
-        action: FilledButton(onPressed: () => _load(_searchController.text), child: const Text("Retry")),
+        action: FilledButton(
+          onPressed: () => _load(_searchController.text),
+          child: const Text("Retry"),
+        ),
       );
     }
     return KeyedSubtree(
       key: const ValueKey('content'),
-      child: isDesktop(context) ? _buildDesktopTable(context) : _buildList(context),
+      child: isDesktop(context)
+          ? _buildDesktopTable(context)
+          : _buildList(context),
     );
   }
 
@@ -287,21 +345,37 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
       return EmptyState(
         icon: Icons.group_off_outlined,
         title: "No team members yet",
-        action: FilledButton.icon(onPressed: _addUser, icon: const Icon(Icons.person_add_alt), label: const Text("New account")),
+        action: FilledButton.icon(
+          onPressed: _addUser,
+          icon: const Icon(Icons.person_add_alt),
+          label: const Text("New account"),
+        ),
       );
     }
     return ListView.builder(
       itemCount: _items.length + 1,
       itemBuilder: (context, index) {
         if (index == _items.length) {
-          return ListTile(leading: const Icon(Icons.person_add_alt), title: const Text("New account"), onTap: _addUser);
+          return ListTile(
+            leading: const Icon(Icons.person_add_alt),
+            title: const Text("New account"),
+            onTap: _addUser,
+          );
         }
         final member = _items[index];
         final busy = isBusy(member.id);
         return ListTile(
           leading: ColoredAvatar(name: member.name),
-          title: Text(member.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(member.email, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: Text(
+            member.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            member.email,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           trailing: busy ? const InlineSpinner() : RoleBadge(role: member.role),
           onTap: busy ? null : () => _showUserActions(member),
         );
@@ -314,7 +388,11 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
       return EmptyState(
         icon: Icons.group_off_outlined,
         title: "No team members yet",
-        action: FilledButton.icon(onPressed: _addUser, icon: const Icon(Icons.person_add_alt), label: const Text("New account")),
+        action: FilledButton.icon(
+          onPressed: _addUser,
+          icon: const Icon(Icons.person_add_alt),
+          label: const Text("New account"),
+        ),
       );
     }
     return SingleChildScrollView(
@@ -336,17 +414,26 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
                   for (final member in _items)
                     DataRow(
                       cells: [
-                        DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                          ColoredAvatar(name: member.name, radius: 14),
-                          const SizedBox(width: 10),
-                          Text(member.name),
-                        ])),
+                        DataCell(
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ColoredAvatar(name: member.name, radius: 14),
+                              const SizedBox(width: 10),
+                              Text(member.name),
+                            ],
+                          ),
+                        ),
                         DataCell(Text(member.email)),
                         DataCell(RoleBadge(role: member.role)),
                         DataCell(
                           isBusy(member.id)
                               ? const InlineSpinner()
-                              : IconButton(icon: const Icon(Icons.more_vert), tooltip: "Actions", onPressed: () => _showUserActions(member)),
+                              : IconButton(
+                                  icon: const Icon(Icons.more_vert),
+                                  tooltip: "Actions",
+                                  onPressed: () => _showUserActions(member),
+                                ),
                         ),
                       ],
                     ),
@@ -418,7 +505,13 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
       // itself, which loads independently — a failure here just leaves the
       // dropdowns showing "Anyone"/"Any project" rather than blocking the
       // whole tab, so it's surfaced quietly instead of as a full error view.
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't load filter options: ${_messageFor(e)}")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Couldn't load filter options: ${_messageFor(e)}"),
+          ),
+        );
+      }
     }
   }
 
@@ -429,13 +522,13 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
     });
     try {
       final result = await AppScope.of(context).auditLog.list(
-            page: 1,
-            actorId: _selectedPerson?.id,
-            action: _selectedAction,
-            projectId: _selectedProject?.id,
-            from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
-            to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
-          );
+        page: 1,
+        actorId: _selectedPerson?.id,
+        action: _selectedAction,
+        projectId: _selectedProject?.id,
+        from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
+        to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
+      );
       if (!mounted) return;
       setState(() {
         _items
@@ -470,18 +563,21 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
     });
     try {
       final (bytes, filename) = await AppScope.of(context).auditLog.export(
-            actorId: _selectedPerson?.id,
-            action: _selectedAction,
-            projectId: _selectedProject?.id,
-            from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
-            to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
-          );
+        actorId: _selectedPerson?.id,
+        action: _selectedAction,
+        projectId: _selectedProject?.id,
+        from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
+        to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
+      );
       // XFile.fromData (not a real File path) — works on every platform,
       // including web where there's no filesystem to write a temp file to.
-      await Share.shareXFiles(
-        [XFile.fromData(Uint8List.fromList(bytes), name: filename, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")],
-        text: "CPA audit log export",
-      );
+      await Share.shareXFiles([
+        XFile.fromData(
+          Uint8List.fromList(bytes),
+          name: filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ),
+      ], text: "CPA audit log export");
     } catch (e) {
       if (mounted) setState(() => _exportError = _messageFor(e));
     } finally {
@@ -490,7 +586,10 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
   }
 
   bool get _hasFilters =>
-      _selectedPerson != null || _selectedProject != null || _selectedAction != null || _dateRange != null;
+      _selectedPerson != null ||
+      _selectedProject != null ||
+      _selectedAction != null ||
+      _dateRange != null;
 
   void _clearFilters() {
     setState(() {
@@ -504,7 +603,9 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
 
   @override
   Widget build(BuildContext context) {
+    // See _UsersTabState.build()'s comment — same fix, for the same reason.
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -517,11 +618,21 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
                 width: 180,
                 child: DropdownButtonFormField<TeamMember>(
                   initialValue: _selectedPerson,
-                  decoration: const InputDecoration(labelText: "Person", isDense: true),
+                  decoration: const InputDecoration(
+                    labelText: "Person",
+                    isDense: true,
+                  ),
                   isExpanded: true,
                   items: [
                     const DropdownMenuItem(value: null, child: Text("Anyone")),
-                    for (final person in _people) DropdownMenuItem(value: person, child: Text(person.name, overflow: TextOverflow.ellipsis)),
+                    for (final person in _people)
+                      DropdownMenuItem(
+                        value: person,
+                        child: Text(
+                          person.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                   ],
                   onChanged: (value) {
                     setState(() => _selectedPerson = value);
@@ -533,12 +644,24 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
                 width: 200,
                 child: DropdownButtonFormField<String>(
                   initialValue: _selectedAction,
-                  decoration: const InputDecoration(labelText: "Action", isDense: true),
+                  decoration: const InputDecoration(
+                    labelText: "Action",
+                    isDense: true,
+                  ),
                   isExpanded: true,
                   items: [
-                    const DropdownMenuItem(value: null, child: Text("Any action")),
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text("Any action"),
+                    ),
                     for (final entry in _auditActionLabels.entries)
-                      DropdownMenuItem(value: entry.key, child: Text(entry.value, overflow: TextOverflow.ellipsis)),
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(
+                          entry.value,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                   ],
                   onChanged: (value) {
                     setState(() => _selectedAction = value);
@@ -550,11 +673,24 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
                 width: 180,
                 child: DropdownButtonFormField<Project>(
                   initialValue: _selectedProject,
-                  decoration: const InputDecoration(labelText: "Project", isDense: true),
+                  decoration: const InputDecoration(
+                    labelText: "Project",
+                    isDense: true,
+                  ),
                   isExpanded: true,
                   items: [
-                    const DropdownMenuItem(value: null, child: Text("Any project")),
-                    for (final project in _projects) DropdownMenuItem(value: project, child: Text(project.name, overflow: TextOverflow.ellipsis)),
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text("Any project"),
+                    ),
+                    for (final project in _projects)
+                      DropdownMenuItem(
+                        value: project,
+                        child: Text(
+                          project.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                   ],
                   onChanged: (value) {
                     setState(() => _selectedProject = value);
@@ -565,12 +701,22 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
               OutlinedButton.icon(
                 onPressed: _pickDateRange,
                 icon: const Icon(Icons.date_range),
-                label: Text(_dateRange == null ? "Date range" : "${_fmtDate(_dateRange!.start)} – ${_fmtDate(_dateRange!.end)}"),
+                label: Text(
+                  _dateRange == null
+                      ? "Date range"
+                      : "${_fmtDate(_dateRange!.start)} – ${_fmtDate(_dateRange!.end)}",
+                ),
               ),
-              if (_hasFilters) TextButton(onPressed: _clearFilters, child: const Text("Clear filters")),
+              if (_hasFilters)
+                TextButton(
+                  onPressed: _clearFilters,
+                  child: const Text("Clear filters"),
+                ),
               FilledButton.icon(
                 onPressed: _exporting ? null : _export,
-                icon: _exporting ? const InlineSpinner() : const Icon(Icons.ios_share),
+                icon: _exporting
+                    ? const InlineSpinner()
+                    : const Icon(Icons.ios_share),
                 label: const Text("Export .xlsx"),
               ),
             ],
@@ -591,7 +737,8 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
     );
   }
 
-  String _fmtDate(DateTime d) => "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+  String _fmtDate(DateTime d) =>
+      "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
   Widget _buildBody() {
     if (_loading && _items.isEmpty && _error == null) {
@@ -607,7 +754,11 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
       );
     }
     if (_items.isEmpty) {
-      return const EmptyState(key: ValueKey('empty'), icon: Icons.history_toggle_off, title: "No activity recorded yet");
+      return const EmptyState(
+        key: ValueKey('empty'),
+        icon: Icons.history_toggle_off,
+        title: "No activity recorded yet",
+      );
     }
     return KeyedSubtree(key: const ValueKey('content'), child: _buildList());
   }
@@ -624,13 +775,17 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
                 final messenger = ScaffoldMessenger.of(context);
                 try {
                   final result = await AppScope.of(context).auditLog.list(
-                        page: _page + 1,
-                        actorId: _selectedPerson?.id,
-                        action: _selectedAction,
-                        projectId: _selectedProject?.id,
-                        from: _dateRange == null ? null : startOfLocalDayUtc(_dateRange!.start),
-                        to: _dateRange == null ? null : endOfLocalDayUtc(_dateRange!.end),
-                      );
+                    page: _page + 1,
+                    actorId: _selectedPerson?.id,
+                    action: _selectedAction,
+                    projectId: _selectedProject?.id,
+                    from: _dateRange == null
+                        ? null
+                        : startOfLocalDayUtc(_dateRange!.start),
+                    to: _dateRange == null
+                        ? null
+                        : endOfLocalDayUtc(_dateRange!.end),
+                  );
                   if (!mounted) return;
                   setState(() {
                     _items.addAll(result.items);
@@ -638,7 +793,11 @@ class _GlobalActivityTabState extends State<_GlobalActivityTab> {
                     _hasMore = result.hasMore;
                   });
                 } catch (e) {
-                  if (mounted) messenger.showSnackBar(SnackBar(content: Text(_messageFor(e))));
+                  if (mounted) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(_messageFor(e))),
+                    );
+                  }
                 }
               },
               child: const Text("Load more"),

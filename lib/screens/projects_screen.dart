@@ -66,7 +66,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) {
+      if (_scrollController.position.pixels >
+          _scrollController.position.maxScrollExtent - 300) {
         _loadNextPage();
       }
     });
@@ -88,12 +89,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 
   void _showErrorSnackBar(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_messageFor(error))));
   }
 
   void _showSuccessSnackBar(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _loadFirstPage() async {
@@ -128,7 +131,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           ..addAll(result.items);
         _hasMore = result.hasMore;
       });
-      if (isInitialUnfilteredLoad) unawaited(scope.cache.saveProjects(result.items));
+      if (isInitialUnfilteredLoad) {
+        unawaited(scope.cache.saveProjects(result.items));
+      }
     } catch (e) {
       if (mounted) setState(() => _error = _messageFor(e));
     } finally {
@@ -140,7 +145,8 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
     try {
-      final result = await AppScope.of(context).projects.list(page: _page + 1, search: _search);
+      final result = await AppScope.of(context).projects
+          .list(page: _page + 1, search: _search);
       if (!mounted) return;
       setState(() {
         _items.addAll(result.items);
@@ -184,7 +190,12 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     if (result == null || _mutating) return;
     setState(() => _mutating = true);
     try {
-      await scope.projects.update(project.id, result.$1, result.$2, autoApproveThreshold: result.$3);
+      await scope.projects.update(
+        project.id,
+        result.$1,
+        result.$2,
+        autoApproveThreshold: result.$3,
+      );
       _showSuccessSnackBar("Project updated.");
       if (mounted) await _loadFirstPage();
     } catch (e) {
@@ -205,10 +216,20 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(leading: const Icon(Icons.edit_outlined), title: const Text("Edit"), onTap: () => Navigator.pop(context, "edit")),
             ListTile(
-              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-              title: Text("Delete", style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text("Edit"),
+              onTap: () => Navigator.pop(context, "edit"),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                "Delete",
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               onTap: () => Navigator.pop(context, "delete"),
             ),
           ],
@@ -253,7 +274,10 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                decoration: const InputDecoration(hintText: "Search projects…", border: InputBorder.none),
+                decoration: const InputDecoration(
+                  hintText: "Search projects…",
+                  border: InputBorder.none,
+                ),
                 onChanged: _onSearchChanged,
               )
             : const Text("Projects"),
@@ -273,25 +297,38 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: "Activity",
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ActivityScreen())),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ActivityScreen())),
           ),
           IconButton(
             icon: const Icon(Icons.account_circle_outlined),
             tooltip: "Profile",
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
           ),
         ],
       ),
       body: ResponsiveCenter(
         maxWidth: isDesktop(context) ? 1100 : 720,
+        // stretch: without it, this Column's default center alignment gives
+        // the Expanded body a loose width constraint, so the desktop
+        // table's Card (which shrinks to its own content width) ends up
+        // centered on the page instead of left-aligned — see team_screen.dart,
+        // where a screenshot caught this exact bug.
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             AnimatedBuilder(
               animation: scope.offlineQueue,
               builder: (context, _) {
-                if (!scope.offlineQueue.hasPending) return const SizedBox.shrink();
+                if (!scope.offlineQueue.hasPending) {
+                  return const SizedBox.shrink();
+                }
                 return MaterialBanner(
-                  content: Text("${scope.offlineQueue.pending.length} purchase(s) waiting to sync"),
+                  content: Text(
+                    "${scope.offlineQueue.pending.length} purchase(s) waiting to sync",
+                  ),
                   leading: const Icon(Icons.cloud_off),
                   actions: [
                     TextButton(
@@ -324,12 +361,17 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         icon: Icons.error_outline,
         title: "Couldn't load projects",
         subtitle: _error,
-        action: FilledButton(onPressed: _loadFirstPage, child: const Text("Retry")),
+        action: FilledButton(
+          onPressed: _loadFirstPage,
+          child: const Text("Retry"),
+        ),
       );
     }
     return KeyedSubtree(
       key: const ValueKey('content'),
-      child: isDesktop(context) ? _buildDesktopTable(context, currency, role) : _buildList(context, currency, role),
+      child: isDesktop(context)
+          ? _buildDesktopTable(context, currency, role)
+          : _buildList(context, currency, role),
     );
   }
 
@@ -338,8 +380,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
       return EmptyState(
         icon: Icons.folder_off_outlined,
         title: "No projects yet",
-        subtitle: role.canManageProjects ? "Create your first project to start tracking purchases." : "Ask an admin to add a project.",
-        action: role.canManageProjects ? FilledButton.icon(onPressed: _addProject, icon: const Icon(Icons.add), label: const Text("New project")) : null,
+        subtitle: role.canManageProjects
+            ? "Create your first project to start tracking purchases."
+            : "Ask an admin to add a project.",
+        action: role.canManageProjects
+            ? FilledButton.icon(
+                onPressed: _addProject,
+                icon: const Icon(Icons.add),
+                label: const Text("New project"),
+              )
+            : null,
       );
     }
     return RefreshIndicator(
@@ -353,16 +403,32 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             return ListTile(
               leading: Hero(
                 tag: 'project-icon-${project.id}',
-                child: EmojiBadge(emoji: project.icon, color: colorForKey(project.id)),
+                child: EmojiBadge(
+                  emoji: project.icon,
+                  color: colorForKey(project.id),
+                ),
               ),
-              title: Text(project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Text(
+                project.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               subtitle: Text(currency.format(project.totalSpent)),
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ProjectDetailScreen(project: project),
+                ),
+              ),
               onLongPress: () => _showProjectMenu(project),
             );
           }
           if (index == _items.length) {
-            if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+            if (_loading) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
             return const SizedBox.shrink();
           }
           return ListTile(
@@ -378,17 +444,30 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   // A sortable table reads far better than a scrolling list once there are
   // enough projects to be worth reviewing on a wide screen — mouse+keyboard
   // users can scan Name/Total at a glance instead of scrolling tile by tile.
-  Widget _buildDesktopTable(BuildContext context, NumberFormat currency, Role role) {
+  Widget _buildDesktopTable(
+    BuildContext context,
+    NumberFormat currency,
+    Role role,
+  ) {
     if (_items.isEmpty) {
       return EmptyState(
         icon: Icons.folder_off_outlined,
         title: "No projects yet",
-        subtitle: role.canManageProjects ? "Create your first project to start tracking purchases." : "Ask an admin to add a project.",
-        action: role.canManageProjects ? FilledButton.icon(onPressed: _addProject, icon: const Icon(Icons.add), label: const Text("New project")) : null,
+        subtitle: role.canManageProjects
+            ? "Create your first project to start tracking purchases."
+            : "Ask an admin to add a project.",
+        action: role.canManageProjects
+            ? FilledButton.icon(
+                onPressed: _addProject,
+                icon: const Icon(Icons.add),
+                label: const Text("New project"),
+              )
+            : null,
       );
     }
 
-    final sorted = [..._items]..sort((a, b) => _sortAscending ? _compare(a, b) : _compare(b, a));
+    final sorted = [..._items]
+      ..sort((a, b) => _sortAscending ? _compare(a, b) : _compare(b, a));
 
     return SingleChildScrollView(
       controller: _scrollController,
@@ -400,7 +479,11 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             child: Align(
               alignment: Alignment.centerRight,
               child: role.canManageProjects
-                  ? FilledButton.icon(onPressed: _addProject, icon: const Icon(Icons.add), label: const Text("New project"))
+                  ? FilledButton.icon(
+                      onPressed: _addProject,
+                      icon: const Icon(Icons.add),
+                      label: const Text("New project"),
+                    )
                   : null,
             ),
           ),
@@ -413,21 +496,48 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                 sortAscending: _sortAscending,
                 columns: [
                   const DataColumn(label: Text("")),
-                  DataColumn(label: const Text("Name"), onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
-                  DataColumn(label: const Text("Total spent"), numeric: true, onSort: (i, asc) => setState(() { _sortColumn = i; _sortAscending = asc; })),
+                  DataColumn(
+                    label: const Text("Name"),
+                    onSort: (i, asc) => setState(() {
+                      _sortColumn = i;
+                      _sortAscending = asc;
+                    }),
+                  ),
+                  DataColumn(
+                    label: const Text("Total spent"),
+                    numeric: true,
+                    onSort: (i, asc) => setState(() {
+                      _sortColumn = i;
+                      _sortAscending = asc;
+                    }),
+                  ),
                   const DataColumn(label: Text("")),
                 ],
                 rows: [
                   for (final project in sorted)
                     DataRow(
-                      onSelectChanged: (_) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectDetailScreen(project: project))),
+                      onSelectChanged: (_) => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ProjectDetailScreen(project: project),
+                        ),
+                      ),
                       cells: [
-                        DataCell(EmojiBadge(emoji: project.icon, color: colorForKey(project.id), size: 32)),
+                        DataCell(
+                          EmojiBadge(
+                            emoji: project.icon,
+                            color: colorForKey(project.id),
+                            size: 32,
+                          ),
+                        ),
                         DataCell(Text(project.name)),
                         DataCell(Text(currency.format(project.totalSpent))),
                         DataCell(
                           role.canManageProjects
-                              ? IconButton(icon: const Icon(Icons.more_vert), tooltip: "More", onPressed: () => _showProjectMenu(project))
+                              ? IconButton(
+                                  icon: const Icon(Icons.more_vert),
+                                  tooltip: "More",
+                                  onPressed: () => _showProjectMenu(project),
+                                )
                               : const SizedBox.shrink(),
                         ),
                       ],
@@ -436,13 +546,24 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               ),
             ),
           ),
-          if (_loading) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
           if (_hasMore && !_loading)
-            Center(child: TextButton(onPressed: _loadNextPage, child: const Text("Load more"))),
+            Center(
+              child: TextButton(
+                onPressed: _loadNextPage,
+                child: const Text("Load more"),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  int _compare(Project a, Project b) => _sortColumn == 2 ? a.totalSpent.compareTo(b.totalSpent) : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  int _compare(Project a, Project b) => _sortColumn == 2
+      ? a.totalSpent.compareTo(b.totalSpent)
+      : a.name.toLowerCase().compareTo(b.name.toLowerCase());
 }

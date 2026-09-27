@@ -38,7 +38,8 @@ class ProjectDetailScreen extends StatefulWidget {
   State<ProjectDetailScreen> createState() => _ProjectDetailScreenState();
 }
 
-class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTickerProviderStateMixin {
+class _ProjectDetailScreenState extends State<ProjectDetailScreen>
+    with SingleTickerProviderStateMixin {
   late Project _project = widget.project;
   TabController? _tabController;
   final _purchasesTabKey = GlobalKey<_PurchasesTabState>();
@@ -52,7 +53,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
     if (_tabController == null) {
       final scope = AppScope.of(context);
       final showActivityTab = scope.session.user!.role.canSeeActivityLog;
-      if (showActivityTab) _tabController = TabController(length: 2, vsync: this);
+      if (showActivityTab) {
+        _tabController = TabController(length: 2, vsync: this);
+      }
     }
   }
 
@@ -67,10 +70,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
     final result = await showAddEditProjectSheet(context, existing: _project);
     if (result == null) return;
     try {
-      await scope.projects.update(_project.id, result.$1, result.$2, autoApproveThreshold: result.$3);
+      await scope.projects.update(
+        _project.id,
+        result.$1,
+        result.$2,
+        autoApproveThreshold: result.$3,
+      );
       await _refreshProject();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messageFor(e))));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_messageFor(e))));
+      }
     }
   }
 
@@ -89,7 +100,9 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
       setState(() => _project = updated);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't refresh totals: ${_messageFor(e)}")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Couldn't refresh totals: ${_messageFor(e)}")),
+      );
     }
   }
 
@@ -105,9 +118,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Hero(tag: 'project-icon-${_project.id}', child: Text(_project.icon)),
+              Hero(
+                tag: 'project-icon-${_project.id}',
+                child: Text(_project.icon),
+              ),
               const SizedBox(width: 8),
-              Flexible(child: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+              Flexible(
+                child: Text(
+                  _project.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               if (role.canManageProjects) ...[
                 const SizedBox(width: 6),
                 const Icon(Icons.edit, size: 16),
@@ -116,12 +138,22 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
           ),
         ),
         bottom: _tabController != null
-            ? TabBar(controller: _tabController, tabs: const [Tab(text: "Purchases"), Tab(text: "Activity")])
+            ? TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: "Purchases"),
+                  Tab(text: "Activity"),
+                ],
+              )
             : null,
       ),
       body: ResponsiveCenter(
         maxWidth: isDesktop(context) ? 1000 : 720,
+        // stretch: see projects_screen.dart's identical comment — without
+        // it, the desktop purchases table ends up centered instead of
+        // left-aligned.
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
@@ -142,7 +174,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
                         alignment: Alignment.centerRight,
                         child: Text(
                           currency.format(_project.totalSpent),
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -156,11 +189,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
                   ? TabBarView(
                       controller: _tabController,
                       children: [
-                        _PurchasesTab(key: _purchasesTabKey, project: _project, onChanged: _refreshProject),
+                        _PurchasesTab(
+                          key: _purchasesTabKey,
+                          project: _project,
+                          onChanged: _refreshProject,
+                        ),
                         _ActivityTab(projectId: _project.id),
                       ],
                     )
-                  : _PurchasesTab(key: _purchasesTabKey, project: _project, onChanged: _refreshProject),
+                  : _PurchasesTab(
+                      key: _purchasesTabKey,
+                      project: _project,
+                      onChanged: _refreshProject,
+                    ),
             ),
           ],
         ),
@@ -170,7 +211,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
               icon: const Icon(Icons.add),
               label: const Text("Purchase"),
               onPressed: () async {
-                final changed = await showAddEditPurchaseSheet(context, projectId: _project.id, projectName: _project.name);
+                final changed = await showAddEditPurchaseSheet(
+                  context,
+                  projectId: _project.id,
+                  projectName: _project.name,
+                );
                 if (changed == true) {
                   await _refreshProject();
                   _purchasesTabKey.currentState?.refresh();
@@ -185,13 +230,18 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> with SingleTi
 class _PurchasesTab extends StatefulWidget {
   final Project project;
   final VoidCallback onChanged;
-  const _PurchasesTab({super.key, required this.project, required this.onChanged});
+  const _PurchasesTab({
+    super.key,
+    required this.project,
+    required this.onChanged,
+  });
 
   @override
   State<_PurchasesTab> createState() => _PurchasesTabState();
 }
 
-class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesTab> {
+class _PurchasesTabState extends State<_PurchasesTab>
+    with BusyGuard<_PurchasesTab> {
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
   Timer? _debounce;
@@ -217,7 +267,10 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
   void initState() {
     super.initState();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) _loadNextPage();
+      if (_scrollController.position.pixels >
+          _scrollController.position.maxScrollExtent - 300) {
+        _loadNextPage();
+      }
     });
   }
 
@@ -231,7 +284,8 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
 
   void _showError(Object error) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_messageFor(error))));
   }
 
   // Exposed so the parent screen's "add purchase" FAB — which lives outside
@@ -248,7 +302,8 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
       _hasMore = true;
     });
     try {
-      final result = await AppScope.of(context).purchases.forProject(widget.project.id, page: 1, search: _search);
+      final result = await AppScope.of(context).purchases
+          .forProject(widget.project.id, page: 1, search: _search);
       if (!mounted) return;
       setState(() {
         _items
@@ -267,7 +322,8 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
     try {
-      final result = await AppScope.of(context).purchases.forProject(widget.project.id, page: _page + 1, search: _search);
+      final result = await AppScope.of(context).purchases
+          .forProject(widget.project.id, page: _page + 1, search: _search);
       if (!mounted) return;
       setState(() {
         _items.addAll(result.items);
@@ -290,7 +346,12 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
   }
 
   Future<void> _editPurchase(Purchase purchase) async {
-    final changed = await showAddEditPurchaseSheet(context, projectId: widget.project.id, projectName: widget.project.name, existing: purchase);
+    final changed = await showAddEditPurchaseSheet(
+      context,
+      projectId: widget.project.id,
+      projectName: widget.project.name,
+      existing: purchase,
+    );
     if (changed == true) {
       _loadFirstPage();
       widget.onChanged();
@@ -347,15 +408,22 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
     final scope = AppScope.of(context);
     final role = scope.session.user!.role;
     final currency = NumberFormat.simpleCurrency();
-    final pendingForProject = scope.offlineQueue.pending.where((p) => p.projectId == widget.project.id).toList();
+    final pendingForProject = scope.offlineQueue.pending
+        .where((p) => p.projectId == widget.project.id)
+        .toList();
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: TextField(
             controller: _searchController,
-            decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: "Search purchases…", isDense: true),
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: "Search purchases…",
+              isDense: true,
+            ),
             onChanged: _onSearchChanged,
           ),
         ),
@@ -369,8 +437,16 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
     );
   }
 
-  Widget _buildBody(BuildContext context, Role role, NumberFormat currency, List<PendingPurchase> pendingForProject) {
-    if (_loading && _items.isEmpty && pendingForProject.isEmpty && _error == null) {
+  Widget _buildBody(
+    BuildContext context,
+    Role role,
+    NumberFormat currency,
+    List<PendingPurchase> pendingForProject,
+  ) {
+    if (_loading &&
+        _items.isEmpty &&
+        pendingForProject.isEmpty &&
+        _error == null) {
       return const SkeletonList(key: ValueKey('loading'));
     }
     if (_error != null && _items.isEmpty && pendingForProject.isEmpty) {
@@ -379,11 +455,18 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
         icon: Icons.error_outline,
         title: "Couldn't load purchases",
         subtitle: _error,
-        action: FilledButton(onPressed: _loadFirstPage, child: const Text("Retry")),
+        action: FilledButton(
+          onPressed: _loadFirstPage,
+          child: const Text("Retry"),
+        ),
       );
     }
     if (_items.isEmpty && pendingForProject.isEmpty) {
-      return const EmptyState(key: ValueKey('empty'), icon: Icons.receipt_long_outlined, title: "No purchases logged yet");
+      return const EmptyState(
+        key: ValueKey('empty'),
+        icon: Icons.receipt_long_outlined,
+        title: "No purchases logged yet",
+      );
     }
     return KeyedSubtree(
       key: const ValueKey('content'),
@@ -406,20 +489,29 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
     );
   }
 
-  Set<String> get _busyIdsSnapshot => {for (final p in _items) if (isBusy(p.id)) p.id};
+  Set<String> get _busyIdsSnapshot => {
+    for (final p in _items)
+      if (isBusy(p.id)) p.id,
+  };
 
   Future<void> _confirmAndDelete(Purchase purchase) async {
     final confirmed = await confirmAction(
       context,
       title: "Delete this purchase?",
-      message: "\"${purchase.description}\" will be removed from this project's history.",
+      message:
+          "\"${purchase.description}\" will be removed from this project's history.",
       confirmLabel: "Delete",
       tone: ConfirmDialogTone.destructive,
     );
     if (confirmed) _deletePurchase(purchase);
   }
 
-  Widget _buildList(BuildContext context, Role role, NumberFormat currency, List<PendingPurchase> pendingForProject) {
+  Widget _buildList(
+    BuildContext context,
+    Role role,
+    NumberFormat currency,
+    List<PendingPurchase> pendingForProject,
+  ) {
     return RefreshIndicator(
       onRefresh: _loadFirstPage,
       child: ListView.builder(
@@ -430,7 +522,11 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
             final pending = pendingForProject[index];
             return ListTile(
               leading: const Icon(Icons.cloud_upload_outlined),
-              title: Text(pending.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Text(
+                pending.description,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               subtitle: const Text("Pending sync"),
               trailing: Text(currency.format(pending.amount)),
             );
@@ -438,13 +534,24 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
           final itemIndex = index - pendingForProject.length;
           if (itemIndex < _items.length) {
             final purchase = _items[itemIndex];
-            final canReviewThis = role.canReviewPurchases && purchase.status == PurchaseStatus.pending;
+            final canReviewThis =
+                role.canReviewPurchases &&
+                purchase.status == PurchaseStatus.pending;
             final busy = isBusy(purchase.id);
             final tile = ListTile(
               title: Row(
                 children: [
-                  Flexible(child: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  if (purchase.capturedOffline) ...[const SizedBox(width: 6), const OfflineCapturedBadge()],
+                  Flexible(
+                    child: Text(
+                      purchase.description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (purchase.capturedOffline) ...[
+                    const SizedBox(width: 6),
+                    const OfflineCapturedBadge(),
+                  ],
                   if (purchase.status != PurchaseStatus.approved) ...[
                     const SizedBox(width: 6),
                     StatusBadge(status: purchase.status),
@@ -453,31 +560,44 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
               ),
               subtitle: Text(
                 [
-                  if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
+                  if (purchase.quantity != null)
+                    "${purchase.quantity} ${purchase.unit}",
                   if (purchase.vendor != null) purchase.vendor!,
                   DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
                   if (purchase.editedAt != null) "edited",
-                  if (purchase.status == PurchaseStatus.rejected && purchase.rejectionReason != null) "reason: ${purchase.rejectionReason}",
+                  if (purchase.status == PurchaseStatus.rejected &&
+                      purchase.rejectionReason != null)
+                    "reason: ${purchase.rejectionReason}",
                 ].join(" · "),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               trailing: canReviewThis
                   ? (busy
-                      ? const Padding(padding: EdgeInsets.symmetric(horizontal: 8), child: InlineSpinnerPlaceholder())
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              tooltip: "Reject",
-                              color: Theme.of(context).colorScheme.error,
-                              onPressed: () => _rejectPurchase(purchase),
-                            ),
-                            IconButton(icon: const Icon(Icons.check), tooltip: "Approve", onPressed: () => _approvePurchase(purchase)),
-                          ],
-                        ))
-                  : Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8),
+                            child: InlineSpinnerPlaceholder(),
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                tooltip: "Reject",
+                                color: Theme.of(context).colorScheme.error,
+                                onPressed: () => _rejectPurchase(purchase),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.check),
+                                tooltip: "Approve",
+                                onPressed: () => _approvePurchase(purchase),
+                              ),
+                            ],
+                          ))
+                  : Text(
+                      currency.format(purchase.amount),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
             );
             if (!role.canEditPurchases) return tile;
             return Dismissible(
@@ -487,7 +607,8 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
                 final confirmed = await confirmAction(
                   context,
                   title: "Delete this purchase?",
-                  message: "\"${purchase.description}\" will be removed from this project's history.",
+                  message:
+                      "\"${purchase.description}\" will be removed from this project's history.",
                   confirmLabel: "Delete",
                   tone: ConfirmDialogTone.destructive,
                 );
@@ -503,7 +624,12 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
               child: InkWell(onTap: () => _editPurchase(purchase), child: tile),
             );
           }
-          if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+          if (_loading) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
           return const SizedBox.shrink();
         },
       ),
@@ -516,7 +642,11 @@ class _PurchasesTabState extends State<_PurchasesTab> with BusyGuard<_PurchasesT
 class InlineSpinnerPlaceholder extends StatelessWidget {
   const InlineSpinnerPlaceholder({super.key});
   @override
-  Widget build(BuildContext context) => const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2));
+  Widget build(BuildContext context) => const SizedBox(
+    height: 20,
+    width: 20,
+    child: CircularProgressIndicator(strokeWidth: 2),
+  );
 }
 
 /// Desktop table for the Purchases tab, following review_screen.dart's
@@ -572,23 +702,45 @@ class _PurchasesTable extends StatelessWidget {
                 ],
                 rows: [
                   for (final p in pending)
-                    DataRow(cells: [
-                      DataCell(Text(p.description, overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(currency.format(p.amount))),
-                      const DataCell(Text("Pending sync")),
-                      const DataCell(Text("—")),
-                      const DataCell(SizedBox.shrink()),
-                    ]),
+                    DataRow(
+                      cells: [
+                        DataCell(
+                          Text(p.description, overflow: TextOverflow.ellipsis),
+                        ),
+                        DataCell(Text(currency.format(p.amount))),
+                        const DataCell(Text("Pending sync")),
+                        const DataCell(Text("—")),
+                        const DataCell(SizedBox.shrink()),
+                      ],
+                    ),
                   for (final purchase in items)
                     DataRow(
-                      onSelectChanged: role.canEditPurchases ? (_) => onEdit(purchase) : null,
+                      onSelectChanged: role.canEditPurchases
+                          ? (_) => onEdit(purchase)
+                          : null,
                       cells: [
-                        DataCell(SizedBox(width: 260, child: Text(purchase.description, overflow: TextOverflow.ellipsis))),
+                        DataCell(
+                          SizedBox(
+                            width: 260,
+                            child: Text(
+                              purchase.description,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
                         DataCell(Text(currency.format(purchase.amount))),
-                        DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                          StatusBadge(status: purchase.status),
-                          if (purchase.capturedOffline) ...[const SizedBox(width: 6), const OfflineCapturedBadge()],
-                        ])),
+                        DataCell(
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              StatusBadge(status: purchase.status),
+                              if (purchase.capturedOffline) ...[
+                                const SizedBox(width: 6),
+                                const OfflineCapturedBadge(),
+                              ],
+                            ],
+                          ),
+                        ),
                         DataCell(Text(dateFormat.format(purchase.purchasedAt))),
                         DataCell(
                           busyIds.contains(purchase.id)
@@ -596,20 +748,30 @@ class _PurchasesTable extends StatelessWidget {
                               : Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    if (role.canReviewPurchases && purchase.status == PurchaseStatus.pending) ...[
+                                    if (role.canReviewPurchases &&
+                                        purchase.status ==
+                                            PurchaseStatus.pending) ...[
                                       IconButton(
                                         icon: const Icon(Icons.close),
                                         tooltip: "Reject",
-                                        color: Theme.of(context).colorScheme.error,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error,
                                         onPressed: () => onReject(purchase),
                                       ),
-                                      IconButton(icon: const Icon(Icons.check), tooltip: "Approve", onPressed: () => onApprove(purchase)),
+                                      IconButton(
+                                        icon: const Icon(Icons.check),
+                                        tooltip: "Approve",
+                                        onPressed: () => onApprove(purchase),
+                                      ),
                                     ],
                                     if (role.canEditPurchases)
                                       IconButton(
                                         icon: const Icon(Icons.delete_outline),
                                         tooltip: "Delete",
-                                        color: Theme.of(context).colorScheme.error,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error,
                                         onPressed: () => onDelete(purchase),
                                       ),
                                   ],
@@ -621,8 +783,18 @@ class _PurchasesTable extends StatelessWidget {
               ),
             ),
           ),
-          if (loading) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
-          if (hasMore && !loading) Center(child: TextButton(onPressed: onLoadMore, child: const Text("Load more"))),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          if (hasMore && !loading)
+            Center(
+              child: TextButton(
+                onPressed: onLoadMore,
+                child: const Text("Load more"),
+              ),
+            ),
         ],
       ),
     );
@@ -659,7 +831,8 @@ class _ActivityTabState extends State<_ActivityTab> {
 
   Future<void> _load() async {
     try {
-      final result = await AppScope.of(context).auditLog.list(projectId: widget.projectId, page: 1);
+      final result = await AppScope.of(context).auditLog
+          .list(projectId: widget.projectId, page: 1);
       _items
         ..clear()
         ..addAll(result.items);
@@ -676,17 +849,25 @@ class _ActivityTabState extends State<_ActivityTab> {
     return FutureBuilder(
       future: _future,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) return const SkeletonList();
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const SkeletonList();
+        }
         if (_error != null) {
           return EmptyState(
             icon: Icons.error_outline,
             title: "Couldn't load activity",
             subtitle: _error,
-            action: FilledButton(onPressed: () => setState(() => _future = _load()), child: const Text("Retry")),
+            action: FilledButton(
+              onPressed: () => setState(() => _future = _load()),
+              child: const Text("Retry"),
+            ),
           );
         }
         if (_items.isEmpty) {
-          return const EmptyState(icon: Icons.history_toggle_off, title: "No activity recorded for this project yet");
+          return const EmptyState(
+            icon: Icons.history_toggle_off,
+            title: "No activity recorded for this project yet",
+          );
         }
         return RefreshIndicator(
           onRefresh: () async => setState(() => _future = _load()),
@@ -698,7 +879,8 @@ class _ActivityTabState extends State<_ActivityTab> {
                   onPressed: () async {
                     final messenger = ScaffoldMessenger.of(context);
                     try {
-                      final result = await AppScope.of(context).auditLog.list(projectId: widget.projectId, page: _page + 1);
+                      final result = await AppScope.of(context).auditLog
+                          .list(projectId: widget.projectId, page: _page + 1);
                       if (!mounted) return;
                       setState(() {
                         _items.addAll(result.items);
@@ -706,7 +888,11 @@ class _ActivityTabState extends State<_ActivityTab> {
                         _hasMore = result.hasMore;
                       });
                     } catch (e) {
-                      if (mounted) messenger.showSnackBar(SnackBar(content: Text(_messageFor(e))));
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          SnackBar(content: Text(_messageFor(e))),
+                        );
+                      }
                     }
                   },
                   child: const Text("Load more"),

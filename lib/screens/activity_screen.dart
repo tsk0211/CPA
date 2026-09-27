@@ -50,7 +50,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) _loadNextPage();
+      if (_scrollController.position.pixels >
+          _scrollController.position.maxScrollExtent - 300) {
+        _loadNextPage();
+      }
     });
   }
 
@@ -87,7 +90,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
     try {
-      final result = await AppScope.of(context).purchases.recent(page: _page + 1);
+      final result = await AppScope.of(context).purchases
+          .recent(page: _page + 1);
       if (!mounted) return;
       setState(() {
         _items.addAll(result.items);
@@ -95,7 +99,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
         _hasMore = result.hasMore;
       });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_messageFor(e))));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_messageFor(e))));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -127,15 +134,24 @@ class _ActivityScreenState extends State<ActivityScreen> {
         icon: Icons.error_outline,
         title: "Couldn't load activity",
         subtitle: _error,
-        action: FilledButton(onPressed: _loadFirstPage, child: const Text("Retry")),
+        action: FilledButton(
+          onPressed: _loadFirstPage,
+          child: const Text("Retry"),
+        ),
       );
     }
     if (_items.isEmpty) {
-      return const EmptyState(key: ValueKey('empty'), icon: Icons.history_toggle_off, title: "Nothing logged yet");
+      return const EmptyState(
+        key: ValueKey('empty'),
+        icon: Icons.history_toggle_off,
+        title: "Nothing logged yet",
+      );
     }
     return KeyedSubtree(
       key: const ValueKey('content'),
-      child: isDesktop(context) ? _buildDesktopTable(context, currency) : _buildList(context, currency),
+      child: isDesktop(context)
+          ? _buildDesktopTable(context, currency)
+          : _buildList(context, currency),
     );
   }
 
@@ -149,10 +165,19 @@ class _ActivityScreenState extends State<ActivityScreen> {
           if (index < _items.length) {
             final purchase = _items[index];
             return ListTile(
-              leading: Text(purchase.projectIcon ?? "📁", style: const TextStyle(fontSize: 22)),
+              leading: Text(
+                purchase.projectIcon ?? "📁",
+                style: const TextStyle(fontSize: 22),
+              ),
               title: Row(
                 children: [
-                  Flexible(child: Text(purchase.description, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Flexible(
+                    child: Text(
+                      purchase.description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   if (purchase.status != PurchaseStatus.approved) ...[
                     const SizedBox(width: 6),
                     StatusBadge(status: purchase.status),
@@ -162,18 +187,27 @@ class _ActivityScreenState extends State<ActivityScreen> {
               subtitle: Text(
                 [
                   purchase.projectName ?? '',
-                  if (purchase.quantity != null) "${purchase.quantity} ${purchase.unit}",
+                  if (purchase.quantity != null)
+                    "${purchase.quantity} ${purchase.unit}",
                   purchase.createdByName ?? '',
                   DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt),
                 ].join(" · "),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              trailing: Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
+              trailing: Text(
+                currency.format(purchase.amount),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
               onTap: () => _showDetails(context, purchase, currency),
             );
           }
-          if (_loading) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
+          if (_loading) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
           return const SizedBox.shrink();
         },
       ),
@@ -184,55 +218,94 @@ class _ActivityScreenState extends State<ActivityScreen> {
   // scans faster than a scrolling list once there's real volume.
   Widget _buildDesktopTable(BuildContext context, NumberFormat currency) {
     final dateFormat = DateFormat.yMMMd().add_jm();
-    return SingleChildScrollView(
-      controller: _scrollController,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text("Project")),
-                  DataColumn(label: Text("Description")),
-                  DataColumn(label: Text("Status")),
-                  DataColumn(label: Text("Amount"), numeric: true),
-                  DataColumn(label: Text("Logged by")),
-                  DataColumn(label: Text("Date")),
-                ],
-                rows: [
-                  for (final purchase in _items)
-                    DataRow(
-                      onSelectChanged: (_) => _showDetails(context, purchase, currency),
-                      cells: [
-                        DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                          Text(purchase.projectIcon ?? "📁"),
-                          const SizedBox(width: 6),
-                          Text(purchase.projectName ?? "—"),
-                        ])),
-                        DataCell(SizedBox(width: 260, child: Text(purchase.description, overflow: TextOverflow.ellipsis))),
-                        DataCell(StatusBadge(status: purchase.status)),
-                        DataCell(Text(currency.format(purchase.amount))),
-                        DataCell(Text(purchase.createdByName ?? "—")),
-                        DataCell(Text(dateFormat.format(purchase.purchasedAt))),
-                      ],
-                    ),
-                ],
+    // width: double.infinity: this screen has no ancestor Column to make
+    // stretch-aligned (ResponsiveCenter's Align gives a loose width
+    // constraint), so without an explicit width the table's Card — which
+    // shrinks to its own content width — would end up centered on the page
+    // instead of left-aligned. See team_screen.dart for the same bug caught
+    // by a screenshot.
+    return SizedBox(
+      width: double.infinity,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Card(
+              clipBehavior: Clip.antiAlias,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text("Project")),
+                    DataColumn(label: Text("Description")),
+                    DataColumn(label: Text("Status")),
+                    DataColumn(label: Text("Amount"), numeric: true),
+                    DataColumn(label: Text("Logged by")),
+                    DataColumn(label: Text("Date")),
+                  ],
+                  rows: [
+                    for (final purchase in _items)
+                      DataRow(
+                        onSelectChanged: (_) =>
+                            _showDetails(context, purchase, currency),
+                        cells: [
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(purchase.projectIcon ?? "📁"),
+                                const SizedBox(width: 6),
+                                Text(purchase.projectName ?? "—"),
+                              ],
+                            ),
+                          ),
+                          DataCell(
+                            SizedBox(
+                              width: 260,
+                              child: Text(
+                                purchase.description,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          DataCell(StatusBadge(status: purchase.status)),
+                          DataCell(Text(currency.format(purchase.amount))),
+                          DataCell(Text(purchase.createdByName ?? "—")),
+                          DataCell(
+                            Text(dateFormat.format(purchase.purchasedAt)),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-          if (_loading) const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
-          if (_hasMore && !_loading) Center(child: TextButton(onPressed: _loadNextPage, child: const Text("Load more"))),
-        ],
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            if (_hasMore && !_loading)
+              Center(
+                child: TextButton(
+                  onPressed: _loadNextPage,
+                  child: const Text("Load more"),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
   // The list row truncates to one line to stay scannable — this is where
   // the full record (vendor/category/notes included) actually lives.
-  void _showDetails(BuildContext context, Purchase purchase, NumberFormat currency) {
+  void _showDetails(
+    BuildContext context,
+    Purchase purchase,
+    NumberFormat currency,
+  ) {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -244,20 +317,48 @@ class _ActivityScreenState extends State<ActivityScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                DetailRow(label: "Amount", value: currency.format(purchase.amount)),
-                if (purchase.projectName != null) DetailRow(label: "Project", value: purchase.projectName!),
-                if (purchase.quantity != null) DetailRow(label: "Quantity", value: "${purchase.quantity} ${purchase.unit}"),
-                if (purchase.vendor != null) DetailRow(label: "Vendor", value: purchase.vendor!),
-                if (purchase.category != null) DetailRow(label: "Category", value: purchase.category!),
-                if (purchase.notes != null) DetailRow(label: "Notes", value: purchase.notes!),
-                if (purchase.createdByName != null) DetailRow(label: "Logged by", value: purchase.createdByName!),
-                DetailRow(label: "Purchased at", value: DateFormat.yMMMEd().add_jm().format(purchase.purchasedAt)),
-                if (purchase.editedAt != null) DetailRow(label: "Edited at", value: DateFormat.yMMMEd().add_jm().format(purchase.editedAt!)),
+                DetailRow(
+                  label: "Amount",
+                  value: currency.format(purchase.amount),
+                ),
+                if (purchase.projectName != null)
+                  DetailRow(label: "Project", value: purchase.projectName!),
+                if (purchase.quantity != null)
+                  DetailRow(
+                    label: "Quantity",
+                    value: "${purchase.quantity} ${purchase.unit}",
+                  ),
+                if (purchase.vendor != null)
+                  DetailRow(label: "Vendor", value: purchase.vendor!),
+                if (purchase.category != null)
+                  DetailRow(label: "Category", value: purchase.category!),
+                if (purchase.notes != null)
+                  DetailRow(label: "Notes", value: purchase.notes!),
+                if (purchase.createdByName != null)
+                  DetailRow(label: "Logged by", value: purchase.createdByName!),
+                DetailRow(
+                  label: "Purchased at",
+                  value: DateFormat.yMMMEd().add_jm().format(
+                    purchase.purchasedAt,
+                  ),
+                ),
+                if (purchase.editedAt != null)
+                  DetailRow(
+                    label: "Edited at",
+                    value: DateFormat.yMMMEd().add_jm().format(
+                      purchase.editedAt!,
+                    ),
+                  ),
               ],
             ),
           ),
         ),
-        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text("Close"))],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text("Close"),
+          ),
+        ],
       ),
     );
   }
