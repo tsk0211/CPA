@@ -6,6 +6,7 @@ import { LayoutDashboard, FolderKanban, ClipboardCheck, BarChart3, Users, UserCi
 import { useSession } from "@/lib/session";
 import { roleCan } from "@/types";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface NavItem {
   href: string;
@@ -50,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       <aside className="flex w-56 flex-col border-r bg-muted/20 px-3 py-4">
         <div className="mb-6 flex items-center gap-2 px-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary font-bold">C</div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary font-bold shadow-sm">C</div>
           <span className="font-semibold">CPA</span>
         </div>
         <nav className="flex flex-1 flex-col gap-1">
@@ -61,8 +62,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  active ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
+                  active
+                    ? "bg-primary/15 text-primary shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground hover:translate-x-0.5",
                 )}
               >
                 <item.icon className="h-4 w-4" />
@@ -71,16 +74,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <Link
-          href="/profile"
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-            pathname.startsWith("/profile") ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-        >
-          <UserCircle className="h-4 w-4" />
-          Profile
-        </Link>
+        <div className="flex flex-col gap-2">
+          <ThemeToggle className="self-start" />
+          <Link
+            href="/profile"
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
+              pathname.startsWith("/profile")
+                ? "bg-primary/15 text-primary shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground hover:translate-x-0.5",
+            )}
+          >
+            <UserCircle className="h-4 w-4" />
+            Profile
+          </Link>
+        </div>
       </aside>
       <main className="flex-1 overflow-auto">{children}</main>
     </div>
