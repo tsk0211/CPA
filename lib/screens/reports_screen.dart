@@ -8,10 +8,12 @@ import '../api/api_exception.dart';
 import '../models/project.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../theme.dart';
 import '../widgets/breakpoints.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/common/error_text.dart';
 import '../widgets/common/form_error_text.dart';
+import '../widgets/common/icon_badge.dart';
 import '../widgets/common/loading_indicator.dart';
 import '../utils/date_range.dart';
 import '../widgets/project_multi_select_sheet.dart';
@@ -236,7 +238,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             for (final p in _previewItems)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: p.projectIcon != null ? Text(p.projectIcon!, style: const TextStyle(fontSize: 20)) : null,
+                leading: p.projectIcon != null ? EmojiBadge(emoji: p.projectIcon!, color: colorForKey(p.projectId), size: 32) : null,
                 title: Text(p.description, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text(
                   [if (p.projectName != null) p.projectName!, dateFormat.format(p.purchasedAt)].join(" · "),

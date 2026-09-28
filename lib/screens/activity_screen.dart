@@ -4,9 +4,11 @@ import 'package:intl/intl.dart';
 import '../api/api_exception.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../theme.dart';
 import '../widgets/breakpoints.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/common/error_text.dart';
+import '../widgets/common/icon_badge.dart';
 import '../widgets/common/skeleton.dart';
 import '../widgets/detail_row.dart';
 import '../widgets/responsive_center.dart';
@@ -165,10 +167,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           if (index < _items.length) {
             final purchase = _items[index];
             return ListTile(
-              leading: Text(
-                purchase.projectIcon ?? "📁",
-                style: const TextStyle(fontSize: 22),
-              ),
+              leading: EmojiBadge(emoji: purchase.projectIcon ?? "📁", color: colorForKey(purchase.projectId)),
               title: Row(
                 children: [
                   Flexible(
@@ -254,7 +253,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(purchase.projectIcon ?? "📁"),
+                                EmojiBadge(emoji: purchase.projectIcon ?? "📁", color: colorForKey(purchase.projectId), size: 28),
                                 const SizedBox(width: 6),
                                 Text(purchase.projectName ?? "—"),
                               ],

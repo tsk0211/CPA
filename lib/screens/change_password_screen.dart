@@ -53,53 +53,63 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: widget.forced ? null : AppBar(title: const Text("Change password")),
+      // LayoutBuilder + minHeight-constrained Center inside the scroll view —
+      // see login_screen.dart's comment for why a bare Center(child:
+      // SingleChildScrollView(...)) doesn't actually center short content.
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 380),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.forced) ...[
-                    Text("Set your password", style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 4),
-                    const Text("You're using a temporary password. Choose a new one to continue."),
-                    const SizedBox(height: 24),
-                  ],
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: _currentController,
-                            obscureText: true,
-                            decoration: InputDecoration(
-                              labelText: widget.forced ? "Temporary password" : "Current password",
-                              helperText: widget.forced ? "The one-time password you just logged in with" : null,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 380),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (widget.forced) ...[
+                          Text("Set your password", style: Theme.of(context).textTheme.headlineSmall),
+                          const SizedBox(height: 4),
+                          const Text("You're using a temporary password. Choose a new one to continue."),
+                          const SizedBox(height: 24),
+                        ],
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                TextField(
+                                  controller: _currentController,
+                                  obscureText: true,
+                                  decoration: InputDecoration(
+                                    labelText: widget.forced ? "Temporary password" : "Current password",
+                                    helperText: widget.forced ? "The one-time password you just logged in with" : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _newController,
+                                  obscureText: true,
+                                  decoration: const InputDecoration(labelText: "New password", helperText: "At least 8 characters"),
+                                  onSubmitted: (_) => _submit(),
+                                ),
+                                FormErrorText(_error),
+                                const SizedBox(height: 12),
+                                LoadingFilledButton(loading: _submitting, onPressed: _submit, child: const Text("Save")),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _newController,
-                            obscureText: true,
-                            decoration: const InputDecoration(labelText: "New password", helperText: "At least 8 characters"),
-                            onSubmitted: (_) => _submit(),
-                          ),
-                          FormErrorText(_error),
-                          const SizedBox(height: 12),
-                          LoadingFilledButton(loading: _submitting, onPressed: _submit, child: const Text("Save")),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

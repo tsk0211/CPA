@@ -4,10 +4,12 @@ import 'package:intl/intl.dart';
 import '../api/api_exception.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../theme.dart';
 import '../widgets/breakpoints.dart';
 import '../widgets/common/confirm_dialog.dart';
 import '../widgets/common/empty_state.dart';
 import '../widgets/common/error_text.dart';
+import '../widgets/common/icon_badge.dart';
 import '../widgets/common/loading_indicator.dart';
 import '../widgets/common/offline_captured_badge.dart';
 import '../widgets/common/skeleton.dart';
@@ -198,7 +200,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 children: [
                   Row(
                     children: [
-                      if (purchase.projectIcon != null) Padding(padding: const EdgeInsets.only(right: 8), child: Text(purchase.projectIcon!)),
+                      if (purchase.projectIcon != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: EmojiBadge(emoji: purchase.projectIcon!, color: colorForKey(purchase.projectId), size: 32),
+                        ),
                       Expanded(child: Text(purchase.description, style: Theme.of(context).textTheme.titleSmall)),
                       if (purchase.capturedOffline) const Padding(padding: EdgeInsets.only(right: 6), child: OfflineCapturedBadge()),
                       Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -259,7 +265,11 @@ class _ReviewTable extends StatelessWidget {
               DataRow(
                 cells: [
                   DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (purchase.projectIcon != null) Padding(padding: const EdgeInsets.only(right: 6), child: Text(purchase.projectIcon!)),
+                    if (purchase.projectIcon != null)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: EmojiBadge(emoji: purchase.projectIcon!, color: colorForKey(purchase.projectId), size: 28),
+                      ),
                     Text(purchase.projectName ?? "—"),
                   ])),
                   DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
