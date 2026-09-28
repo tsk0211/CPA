@@ -9,7 +9,7 @@ import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-import { securityConfig, serverConfig } from "./config/index.js";
+import { appConfig, securityConfig, serverConfig } from "./config/index.js";
 import { connectDb } from "./db.js";
 import { InvalidDateError } from "./dateFilter.js";
 import { auditLogRouter } from "./routes/auditLog.js";
@@ -38,6 +38,10 @@ export function createApp() {
   });
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
+  // Public, unauthenticated, cacheable app-display config — currency code
+  // today, anything else both clients need without hardcoding/guessing from
+  // locale later. See config/app.ts.
+  app.get("/config", (_req, res) => res.json({ currencyCode: appConfig.currencyCode }));
   app.use("/auth/login", loginLimiter);
   app.use("/auth", authRouter);
   app.use("/projects", projectsRouter);

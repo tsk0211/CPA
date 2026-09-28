@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../api/api_exception.dart';
+import '../state/app_currency.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
 import '../widgets/common/empty_state.dart';
@@ -63,14 +63,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // trend() is a full 30-day aggregation and shouldn't sit at the end
       // of a serial chain behind four other requests.
       final projectsFuture = scope.projects.list(page: 1, limit: 1);
-      final monthSpendFuture = role.canExport ? scope.purchases.search(page: 1, limit: 1, from: startOfMonth) : null;
-      final pendingFuture = role.canReviewPurchases ? scope.purchases.pending(page: 1, limit: 1) : null;
-      final teamFuture = role.canManageUsers ? scope.users.list(page: 1, limit: 1) : null;
+      final monthSpendFuture = role.canExport
+          ? scope.purchases.search(page: 1, limit: 1, from: startOfMonth)
+          : null;
+      final pendingFuture = role.canReviewPurchases
+          ? scope.purchases.pending(page: 1, limit: 1)
+          : null;
+      final teamFuture = role.canManageUsers
+          ? scope.users.list(page: 1, limit: 1)
+          : null;
       final recentFuture = scope.purchases.recent(page: 1, limit: 8);
-      final trendFuture = role.canExport ? scope.purchases.trend(days: 30) : null;
+      final trendFuture = role.canExport
+          ? scope.purchases.trend(days: 30)
+          : null;
 
       final projects = await projectsFuture;
-      final monthSpend = monthSpendFuture == null ? null : (await monthSpendFuture).$2;
+      final monthSpend = monthSpendFuture == null
+          ? null
+          : (await monthSpendFuture).$2;
       final pending = pendingFuture == null ? null : await pendingFuture;
       final team = teamFuture == null ? null : await teamFuture;
       final recent = await recentFuture;
@@ -100,11 +110,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       appBar: AppBar(
         title: const Text("Dashboard"),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), tooltip: "Refresh", onPressed: _load),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: "Refresh",
+            onPressed: _load,
+          ),
           IconButton(
             icon: const Icon(Icons.account_circle_outlined),
             tooltip: "Profile",
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const ProfileScreen())),
           ),
         ],
       ),
@@ -115,55 +130,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: _loading && _recent.isEmpty
               ? const SkeletonList(key: ValueKey('loading'))
               : _error != null
-                  ? EmptyState(
-                      key: const ValueKey('error'),
-                      icon: Icons.error_outline,
-                      title: "Couldn't load the dashboard",
-                      subtitle: _error,
-                      action: FilledButton(onPressed: _load, child: const Text("Retry")),
-                    )
-                  : RefreshIndicator(
-                      key: const ValueKey('content'),
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.all(24),
-                        children: [
-                          Text("Welcome back, ${user.name.split(' ').first}", style: Theme.of(context).textTheme.headlineSmall),
-                          const SizedBox(height: 20),
-                          _buildStatRow(context),
-                          if (_trend != null) ...[
-                            const SizedBox(height: 24),
-                            _buildTrendCard(context),
-                          ],
-                          const SizedBox(height: 32),
-                          Text("Recent activity", style: Theme.of(context).textTheme.titleMedium),
-                          const SizedBox(height: 8),
-                          if (_recent.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              child: EmptyState(icon: Icons.receipt_long_outlined, title: "Nothing logged yet"),
-                            )
-                          else
-                            Card(
-                              child: Column(
-                                children: [
-                                  for (final p in _recent)
-                                    ListTile(
-                                      leading: EmojiBadge(emoji: p.projectIcon ?? "📁", color: colorForKey(p.projectId)),
-                                      title: Text(p.description, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                      subtitle: Text(
-                                        [if (p.projectName != null) p.projectName!, p.createdByName ?? ''].join(" · "),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      trailing: Text(NumberFormat.simpleCurrency().format(p.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    ),
-                                ],
-                              ),
-                            ),
-                        ],
+              ? EmptyState(
+                  key: const ValueKey('error'),
+                  icon: Icons.error_outline,
+                  title: "Couldn't load the dashboard",
+                  subtitle: _error,
+                  action: FilledButton(
+                    onPressed: _load,
+                    child: const Text("Retry"),
+                  ),
+                )
+              : RefreshIndicator(
+                  key: const ValueKey('content'),
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.all(24),
+                    children: [
+                      Text(
+                        "Welcome back, ${user.name.split(' ').first}",
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
-                    ),
+                      const SizedBox(height: 20),
+                      _buildStatRow(context),
+                      if (_trend != null) ...[
+                        const SizedBox(height: 24),
+                        _buildTrendCard(context),
+                      ],
+                      const SizedBox(height: 32),
+                      Text(
+                        "Recent activity",
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      if (_recent.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: EmptyState(
+                            icon: Icons.receipt_long_outlined,
+                            title: "Nothing logged yet",
+                          ),
+                        )
+                      else
+                        Card(
+                          child: Column(
+                            children: [
+                              for (final p in _recent)
+                                ListTile(
+                                  leading: EmojiBadge(
+                                    emoji: p.projectIcon ?? "📁",
+                                    color: colorForKey(p.projectId),
+                                  ),
+                                  title: Text(
+                                    p.description,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    [
+                                      if (p.projectName != null) p.projectName!,
+                                      p.createdByName ?? '',
+                                    ].join(" · "),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing: Text(
+                                    currencyFormat().format(p.amount),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
         ),
       ),
     );
@@ -175,14 +217,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // instead of leaving the rest of a wide monitor empty.
   Widget _buildStatRow(BuildContext context) {
     final cards = [
-      StatCard(icon: Icons.folder_outlined, label: "Active projects", value: "${_activeProjects ?? '—'}", badgeColor: const Color(0xFF3B82F6)),
+      StatCard(
+        icon: Icons.folder_outlined,
+        label: "Active projects",
+        value: "${_activeProjects ?? '—'}",
+        badgeColor: const Color(0xFF3B82F6),
+      ),
       // A mutable field, not a local, so `if (_monthSpend != null)` alone
       // doesn't promote it to non-null — capture it first.
       if (_monthSpend case final monthSpend?)
         StatCard(
           icon: Icons.payments_outlined,
           label: "Approved spend this month",
-          value: NumberFormat.simpleCurrency().format(monthSpend),
+          value: currencyFormat().format(monthSpend),
           badgeColor: const Color(0xFF14B8A6),
         ),
       if (_pendingReview != null)
@@ -193,7 +240,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           emphasize: _pendingReview! > 0,
           badgeColor: const Color(0xFFF59E0B),
         ),
-      if (_teamSize != null) StatCard(icon: Icons.groups_outlined, label: "Team members", value: "$_teamSize", badgeColor: const Color(0xFFA855F7)),
+      if (_teamSize != null)
+        StatCard(
+          icon: Icons.groups_outlined,
+          label: "Team members",
+          value: "$_teamSize",
+          badgeColor: const Color(0xFFA855F7),
+        ),
     ];
 
     return Row(
@@ -215,7 +268,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Text("Spend trend", style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 4),
-            Text("Approved spend, last 30 days", style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              "Approved spend, last 30 days",
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 16),
             SizedBox(height: 220, child: SpendTrendChart(points: _trend!)),
           ],

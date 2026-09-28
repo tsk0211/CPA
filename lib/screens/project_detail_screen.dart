@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../api/api_exception.dart';
+import '../state/app_currency.dart';
 import '../models/audit_entry.dart';
 import '../models/project.dart';
 import '../models/purchase.dart';
@@ -109,7 +110,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen>
   @override
   Widget build(BuildContext context) {
     final role = AppScope.of(context).session.user!.role;
-    final currency = NumberFormat.simpleCurrency();
+    final currency = currencyFormat();
 
     return Scaffold(
       appBar: AppBar(
@@ -407,7 +408,7 @@ class _PurchasesTabState extends State<_PurchasesTab>
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final role = scope.session.user!.role;
-    final currency = NumberFormat.simpleCurrency();
+    final currency = currencyFormat();
     final pendingForProject = scope.offlineQueue.pending
         .where((p) => p.projectId == widget.project.id)
         .toList();

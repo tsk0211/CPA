@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
+import '../api/config_api.dart';
 import '../models/server_status.dart';
 import '../models/user.dart';
+import 'app_currency.dart';
 import 'local_cache.dart';
 
 enum SessionStatus { loading, loggedOut, mustChangePassword, loggedIn }
@@ -12,6 +14,7 @@ enum SessionStatus { loading, loggedOut, mustChangePassword, loggedIn }
 class Session extends ChangeNotifier {
   final ApiClient client;
   final LocalCache cache;
+  late final ConfigApi _configApi = ConfigApi(client);
   Session(this.client, this.cache) {
     client.onSessionExpired = () {
       _user = null;
@@ -44,6 +47,11 @@ class Session extends ChangeNotifier {
   /// the server needed to cold-start, since GET /me's 15s request timeout
   /// threw an uncaught TimeoutException that bootstrap() never handled.
   Future<void> bootstrap() async {
+    // App-wide display config (currency), not tied to login state — apply
+    // whatever was cached from last time instantly, then quietly refresh
+    // from the network. Not awaited: nothing else here should wait on it.
+    unawaited(_loadCurrencyConfig());
+
     await client.loadPersistedTokens();
     if (!client.isLoggedIn) {
       _status = SessionStatus.loggedOut;
@@ -54,7 +62,9 @@ class Session extends ChangeNotifier {
     final cachedUser = await cache.loadUser();
     if (cachedUser != null) {
       _user = cachedUser;
-      _status = cachedUser.mustChangePassword ? SessionStatus.mustChangePassword : SessionStatus.loggedIn;
+      _status = cachedUser.mustChangePassword
+          ? SessionStatus.mustChangePassword
+          : SessionStatus.loggedIn;
       notifyListeners();
       unawaited(_reconcileInBackground());
       return;
@@ -76,7 +86,9 @@ class Session extends ChangeNotifier {
         final json = await client.fetchMe();
         _user = AppUser.fromJson(json);
         await cache.saveUser(_user!);
-        _status = _user!.mustChangePassword ? SessionStatus.mustChangePassword : SessionStatus.loggedIn;
+        _status = _user!.mustChangePassword
+            ? SessionStatus.mustChangePassword
+            : SessionStatus.loggedIn;
         notifyListeners();
         return; // only a successful reconcile stops retrying
       } catch (_) {
@@ -97,7 +109,8 @@ class Session extends ChangeNotifier {
     _serverStatus = ServerStatus.waking;
     notifyListeners();
 
-    const maxAttempts = 30; // ~90s at 3s apart — generous for a Render cold start
+    const maxAttempts =
+        30; // ~90s at 3s apart — generous for a Render cold start
     var live = false;
     for (var attempt = 0; attempt < maxAttempts && !live; attempt++) {
       live = await client.checkHealth();
@@ -113,7 +126,9 @@ class Session extends ChangeNotifier {
       final json = await client.fetchMe();
       _user = AppUser.fromJson(json);
       await cache.saveUser(_user!);
-      _status = _user!.mustChangePassword ? SessionStatus.mustChangePassword : SessionStatus.loggedIn;
+      _status = _user!.mustChangePassword
+          ? SessionStatus.mustChangePassword
+          : SessionStatus.loggedIn;
     } catch (_) {
       // Still unreachable after the wait, or a real auth error — there's
       // nothing cached to fall back to, so send them to Login rather than
@@ -123,22 +138,51 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> login(String email, String password, {required bool rememberMe}) async {
+  Future<void> login(
+    String email,
+    String password, {
+    required bool rememberMe,
+  }) async {
     final json = await client.login(email, password, rememberMe: rememberMe);
     _user = AppUser.fromJson(json);
     await cache.saveUser(_user!);
-    _status = _user!.mustChangePassword ? SessionStatus.mustChangePassword : SessionStatus.loggedIn;
+    _status = _user!.mustChangePassword
+        ? SessionStatus.mustChangePassword
+        : SessionStatus.loggedIn;
     notifyListeners();
   }
 
   Future<void> changePassword(String current, String next) async {
     await client.changePassword(current, next);
     if (_user != null) {
-      _user = AppUser(id: _user!.id, name: _user!.name, email: _user!.email, role: _user!.role, mustChangePassword: false);
+      _user = AppUser(
+        id: _user!.id,
+        name: _user!.name,
+        email: _user!.email,
+        role: _user!.role,
+        mustChangePassword: false,
+      );
       await cache.saveUser(_user!);
     }
     _status = SessionStatus.loggedIn;
     notifyListeners();
+  }
+
+  Future<void> _loadCurrencyConfig() async {
+    final cached = await cache.loadCurrencyCode();
+    if (cached != null) {
+      AppCurrency.code = cached;
+      notifyListeners();
+    }
+    try {
+      final fresh = await _configApi.getCurrencyCode();
+      AppCurrency.code = fresh;
+      await cache.saveCurrencyCode(fresh);
+      notifyListeners();
+    } catch (_) {
+      // Best-effort — stay on the cached/default value if the server isn't
+      // reachable yet; nothing currency-related should block on this.
+    }
   }
 
   Future<void> logout() async {

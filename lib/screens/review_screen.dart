@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../api/api_exception.dart';
+import '../state/app_currency.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
 import '../theme.dart';
@@ -55,7 +56,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
       _error = null;
     });
     try {
-      final result = await AppScope.of(context).purchases.pending(page: 1, limit: 50);
+      final result = await AppScope.of(context).purchases
+          .pending(page: 1, limit: 50);
       if (!mounted) return;
       setState(() {
         _items
@@ -77,7 +79,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (_loading || !_hasMore) return;
     setState(() => _loading = true);
     try {
-      final result = await AppScope.of(context).purchases.pending(page: _page + 1, limit: 50);
+      final result = await AppScope.of(context).purchases
+          .pending(page: _page + 1, limit: 50);
       if (!mounted) return;
       setState(() {
         _items.addAll(result.items);
@@ -85,9 +88,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
         _hasMore = result.hasMore;
       });
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } on NetworkUnavailableException {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(networkUnavailableMessage)));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(networkUnavailableMessage)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -108,7 +118,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
       setState(() => _items.removeWhere((p) => p.id == purchase.id));
       widget.onReviewed();
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't approve: ${e.message}")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Couldn't approve: ${e.message}")),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busyIds.remove(purchase.id));
     }
@@ -124,7 +138,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
       setState(() => _items.removeWhere((p) => p.id == purchase.id));
       widget.onReviewed();
     } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Couldn't reject: ${e.message}")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Couldn't reject: ${e.message}")),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busyIds.remove(purchase.id));
     }
@@ -135,7 +153,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Review"),
-        actions: [IconButton(icon: const Icon(Icons.refresh), tooltip: "Refresh", onPressed: _load)],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: "Refresh",
+            onPressed: _load,
+          ),
+        ],
       ),
       body: ResponsiveCenter(
         maxWidth: isDesktop(context) ? 1100 : 720,
@@ -148,7 +172,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
-    if (_loading && _items.isEmpty) return const SkeletonList(key: ValueKey('loading'));
+    if (_loading && _items.isEmpty) {
+      return const SkeletonList(key: ValueKey('loading'));
+    }
     if (_error != null) {
       return EmptyState(
         key: const ValueKey('error'),
@@ -168,12 +194,19 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
     return KeyedSubtree(
       key: const ValueKey('content'),
-      child: isDesktop(context) ? _ReviewTable(items: _items, busyIds: _busyIds, onApprove: _approve, onReject: _reject) : _buildList(context),
+      child: isDesktop(context)
+          ? _ReviewTable(
+              items: _items,
+              busyIds: _busyIds,
+              onApprove: _approve,
+              onReject: _reject,
+            )
+          : _buildList(context),
     );
   }
 
   Widget _buildList(BuildContext context) {
-    final currency = NumberFormat.simpleCurrency();
+    final currency = currencyFormat();
     final dateFormat = DateFormat.yMMMd().add_jm();
     return RefreshIndicator(
       onRefresh: _load,
@@ -185,7 +218,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
             return Center(
               child: TextButton(
                 onPressed: _loading ? null : _loadMore,
-                child: _loading ? const InlineSpinner() : const Text("Load more"),
+                child: _loading
+                    ? const InlineSpinner()
+                    : const Text("Load more"),
               ),
             );
           }
@@ -203,27 +238,52 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       if (purchase.projectIcon != null)
                         Padding(
                           padding: const EdgeInsets.only(right: 8),
-                          child: EmojiBadge(emoji: purchase.projectIcon!, color: colorForKey(purchase.projectId), size: 32),
+                          child: EmojiBadge(
+                            emoji: purchase.projectIcon!,
+                            color: colorForKey(purchase.projectId),
+                            size: 32,
+                          ),
                         ),
-                      Expanded(child: Text(purchase.description, style: Theme.of(context).textTheme.titleSmall)),
-                      if (purchase.capturedOffline) const Padding(padding: EdgeInsets.only(right: 6), child: OfflineCapturedBadge()),
-                      Text(currency.format(purchase.amount), style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Expanded(
+                        child: Text(
+                          purchase.description,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      if (purchase.capturedOffline)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 6),
+                          child: OfflineCapturedBadge(),
+                        ),
+                      Text(
+                        currency.format(purchase.amount),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    [if (purchase.projectName != null) purchase.projectName!, purchase.createdByName ?? "unknown", dateFormat.format(purchase.purchasedAt)].join(" · "),
+                    [
+                      if (purchase.projectName != null) purchase.projectName!,
+                      purchase.createdByName ?? "unknown",
+                      dateFormat.format(purchase.purchasedAt),
+                    ].join(" · "),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      TextButton(onPressed: busy ? null : () => _reject(purchase), child: const Text("Reject")),
+                      TextButton(
+                        onPressed: busy ? null : () => _reject(purchase),
+                        child: const Text("Reject"),
+                      ),
                       const SizedBox(width: 8),
                       FilledButton(
                         onPressed: busy ? null : () => _approve(purchase),
-                        child: busy ? const InlineSpinner() : const Text("Approve"),
+                        child: busy
+                            ? const InlineSpinner()
+                            : const Text("Approve"),
                       ),
                     ],
                   ),
@@ -242,11 +302,16 @@ class _ReviewTable extends StatelessWidget {
   final Set<String> busyIds;
   final void Function(Purchase) onApprove;
   final void Function(Purchase) onReject;
-  const _ReviewTable({required this.items, required this.busyIds, required this.onApprove, required this.onReject});
+  const _ReviewTable({
+    required this.items,
+    required this.busyIds,
+    required this.onApprove,
+    required this.onReject,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final currency = NumberFormat.simpleCurrency();
+    final currency = currencyFormat();
     final dateFormat = DateFormat.yMMMd().add_jm();
     return SingleChildScrollView(
       child: SingleChildScrollView(
@@ -264,18 +329,42 @@ class _ReviewTable extends StatelessWidget {
             for (final purchase in items)
               DataRow(
                 cells: [
-                  DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (purchase.projectIcon != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: EmojiBadge(emoji: purchase.projectIcon!, color: colorForKey(purchase.projectId), size: 28),
-                      ),
-                    Text(purchase.projectName ?? "—"),
-                  ])),
-                  DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (purchase.capturedOffline) const Padding(padding: EdgeInsets.only(right: 6), child: OfflineCapturedBadge()),
-                    SizedBox(width: 220, child: Text(purchase.description, overflow: TextOverflow.ellipsis)),
-                  ])),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (purchase.projectIcon != null)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: EmojiBadge(
+                              emoji: purchase.projectIcon!,
+                              color: colorForKey(purchase.projectId),
+                              size: 28,
+                            ),
+                          ),
+                        Text(purchase.projectName ?? "—"),
+                      ],
+                    ),
+                  ),
+                  DataCell(
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (purchase.capturedOffline)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 6),
+                            child: OfflineCapturedBadge(),
+                          ),
+                        SizedBox(
+                          width: 220,
+                          child: Text(
+                            purchase.description,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   DataCell(Text(currency.format(purchase.amount))),
                   DataCell(Text(purchase.createdByName ?? "unknown")),
                   DataCell(Text(dateFormat.format(purchase.purchasedAt))),
@@ -291,7 +380,11 @@ class _ReviewTable extends StatelessWidget {
                                 color: Theme.of(context).colorScheme.error,
                                 onPressed: () => onReject(purchase),
                               ),
-                              IconButton(icon: const Icon(Icons.check), tooltip: "Approve", onPressed: () => onApprove(purchase)),
+                              IconButton(
+                                icon: const Icon(Icons.check),
+                                tooltip: "Approve",
+                                onPressed: () => onApprove(purchase),
+                              ),
                             ],
                           ),
                   ),

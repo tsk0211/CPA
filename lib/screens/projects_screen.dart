@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../api/api_exception.dart';
+import '../state/app_currency.dart';
 import '../models/project.dart';
 import '../models/role.dart';
 import '../state/app_scope.dart';
@@ -266,7 +267,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   Widget build(BuildContext context) {
     final scope = AppScope.of(context);
     final role = scope.session.user!.role;
-    final currency = NumberFormat.simpleCurrency();
+    final currency = currencyFormat();
 
     return Scaffold(
       appBar: AppBar(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../api/api_exception.dart';
+import '../state/app_currency.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
 import '../theme.dart';
@@ -112,7 +113,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currency = NumberFormat.simpleCurrency();
+    final currency = currencyFormat();
 
     return Scaffold(
       appBar: AppBar(title: const Text("Activity")),
@@ -167,7 +168,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
           if (index < _items.length) {
             final purchase = _items[index];
             return ListTile(
-              leading: EmojiBadge(emoji: purchase.projectIcon ?? "📁", color: colorForKey(purchase.projectId)),
+              leading: EmojiBadge(
+                emoji: purchase.projectIcon ?? "📁",
+                color: colorForKey(purchase.projectId),
+              ),
               title: Row(
                 children: [
                   Flexible(
@@ -253,7 +257,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                EmojiBadge(emoji: purchase.projectIcon ?? "📁", color: colorForKey(purchase.projectId), size: 28),
+                                EmojiBadge(
+                                  emoji: purchase.projectIcon ?? "📁",
+                                  color: colorForKey(purchase.projectId),
+                                  size: 28,
+                                ),
                                 const SizedBox(width: 6),
                                 Text(purchase.projectName ?? "—"),
                               ],

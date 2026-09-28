@@ -18,6 +18,7 @@ class LocalCache {
   static const _userKey = "cpa_cached_user";
   static const _projectsKey = "cpa_cached_projects";
   static const _teamKey = "cpa_cached_team";
+  static const _currencyCodeKey = "cpa_cached_currency_code";
 
   Future<void> saveUser(AppUser user) async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,7 +40,10 @@ class LocalCache {
 
   Future<void> saveProjects(List<Project> projects) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_projectsKey, jsonEncode(projects.map((p) => p.toJson()).toList()));
+    await prefs.setString(
+      _projectsKey,
+      jsonEncode(projects.map((p) => p.toJson()).toList()),
+    );
   }
 
   Future<List<Project>> loadProjects() async {
@@ -47,7 +51,10 @@ class LocalCache {
     final raw = prefs.getString(_projectsKey);
     if (raw == null) return [];
     try {
-      return (jsonDecode(raw) as List).cast<Map<String, dynamic>>().map(Project.fromJson).toList();
+      return (jsonDecode(raw) as List)
+          .cast<Map<String, dynamic>>()
+          .map(Project.fromJson)
+          .toList();
     } catch (_) {
       return [];
     }
@@ -55,7 +62,10 @@ class LocalCache {
 
   Future<void> saveTeam(List<TeamMember> team) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_teamKey, jsonEncode(team.map((m) => m.toJson()).toList()));
+    await prefs.setString(
+      _teamKey,
+      jsonEncode(team.map((m) => m.toJson()).toList()),
+    );
   }
 
   Future<List<TeamMember>> loadTeam() async {
@@ -63,10 +73,27 @@ class LocalCache {
     final raw = prefs.getString(_teamKey);
     if (raw == null) return [];
     try {
-      return (jsonDecode(raw) as List).cast<Map<String, dynamic>>().map(TeamMember.fromJson).toList();
+      return (jsonDecode(raw) as List)
+          .cast<Map<String, dynamic>>()
+          .map(TeamMember.fromJson)
+          .toList();
     } catch (_) {
       return [];
     }
+  }
+
+  // Not user-specific (an app-wide display setting, not part of anyone's
+  // session), so this is deliberately never cleared by clear() below — a
+  // logged-out device should still remember the last-known currency rather
+  // than falling back to the default until the next successful fetch.
+  Future<void> saveCurrencyCode(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_currencyCodeKey, code);
+  }
+
+  Future<String?> loadCurrencyCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_currencyCodeKey);
   }
 
   /// Called on logout and whenever a refresh token turns out to be dead —
@@ -74,6 +101,10 @@ class LocalCache {
   /// the next bootstrap to pick up.
   Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
-    await Future.wait([prefs.remove(_userKey), prefs.remove(_projectsKey), prefs.remove(_teamKey)]);
+    await Future.wait([
+      prefs.remove(_userKey),
+      prefs.remove(_projectsKey),
+      prefs.remove(_teamKey),
+    ]);
   }
 }

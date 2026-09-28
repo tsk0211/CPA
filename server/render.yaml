@@ -44,6 +44,8 @@ services:
         value: "12"
       - key: MIN_PASSWORD_LENGTH
         value: "8"
+      - key: CURRENCY_CODE
+        value: "INR"
       - key: ACCESS_TOKEN_EXPIRES_IN
         value: 15m
       - key: REFRESH_TOKEN_TTL_REMEMBER_ME_DAYS
