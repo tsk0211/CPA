@@ -1,4 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'api/api_client.dart';
@@ -10,9 +11,12 @@ import 'offline/offline_queue.dart';
 import 'screens/change_password_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'screens/public/public_site_shell.dart';
 import 'state/app_scope.dart';
+import 'state/local_cache.dart';
 import 'state/session.dart';
 import 'theme.dart';
+import 'widgets/server_waking_view.dart';
 
 void main() {
   runApp(const CpaApp());
@@ -31,6 +35,7 @@ class CpaApp extends StatefulWidget {
 
 class _CpaAppState extends State<CpaApp> {
   late final ApiClient _client;
+  late final LocalCache _cache;
   late final Session _session;
   late final ProjectsApi _projects;
   late final PurchasesApi _purchases;
@@ -42,7 +47,8 @@ class _CpaAppState extends State<CpaApp> {
   void initState() {
     super.initState();
     _client = widget.debugApiClient ?? ApiClient();
-    _session = Session(_client);
+    _cache = LocalCache();
+    _session = Session(_client, _cache);
     _projects = ProjectsApi(_client);
     _purchases = PurchasesApi(_client);
     _users = UsersApi(_client);
@@ -75,6 +81,7 @@ class _CpaAppState extends State<CpaApp> {
       users: _users,
       auditLog: _auditLog,
       offlineQueue: _offlineQueue,
+      cache: _cache,
       child: MaterialApp(
         title: "CPA",
         debugShowCheckedModeBanner: false,
@@ -87,9 +94,12 @@ class _CpaAppState extends State<CpaApp> {
             final Widget child;
             switch (_session.status) {
               case SessionStatus.loading:
-                child = const Scaffold(body: Center(child: CircularProgressIndicator()));
+                child = ServerWakingView(status: _session.serverStatus);
               case SessionStatus.loggedOut:
-                child = const LoginScreen();
+                // The public marketing site (Home/About Us) only exists on
+                // the web build — the mobile app goes straight to Login as
+                // it always has, no public storefront to show on a phone.
+                child = kIsWeb ? const PublicSiteShell() : const LoginScreen();
               case SessionStatus.mustChangePassword:
                 child = const ChangePasswordScreen(forced: true);
               case SessionStatus.loggedIn:

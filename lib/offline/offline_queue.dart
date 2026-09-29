@@ -74,6 +74,7 @@ class OfflineQueue extends ChangeNotifier {
             vendor: item.vendor,
             category: item.category,
             notes: item.notes,
+            capturedOffline: true,
           );
           _pending.removeWhere((p) => p.localId == item.localId);
           synced++;

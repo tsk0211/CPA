@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../api/api_exception.dart';
 import '../state/app_scope.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/form_error_text.dart';
+import '../widgets/common/loading_button.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   final bool forced;
@@ -40,7 +43,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } on NetworkUnavailableException {
-      setState(() => _error = "Can't reach the server. Check your connection and try again.");
+      setState(() => _error = networkUnavailableMessage);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -50,51 +53,63 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: widget.forced ? null : AppBar(title: const Text("Change password")),
+      // LayoutBuilder + minHeight-constrained Center inside the scroll view —
+      // see login_screen.dart's comment for why a bare Center(child:
+      // SingleChildScrollView(...)) doesn't actually center short content.
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 380),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.forced) ...[
-                    Text("Set your password", style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 4),
-                    const Text("You're using a temporary password. Choose a new one to continue."),
-                    const SizedBox(height: 24),
-                  ],
-                  TextField(
-                    controller: _currentController,
-                    obscureText: true,
-                    decoration: InputDecoration(labelText: widget.forced ? "Temporary password" : "Current password"),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _newController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: "New password", helperText: "At least 8 characters"),
-                    onSubmitted: (_) => _submit(),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 4),
-                    Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ],
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: _submitting ? null : _submit,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: _submitting
-                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Text("Save"),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 380),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (widget.forced) ...[
+                          Text("Set your password", style: Theme.of(context).textTheme.headlineSmall),
+                          const SizedBox(height: 4),
+                          const Text("You're using a temporary password. Choose a new one to continue."),
+                          const SizedBox(height: 24),
+                        ],
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                TextField(
+                                  controller: _currentController,
+                                  obscureText: true,
+                                  decoration: InputDecoration(
+                                    labelText: widget.forced ? "Temporary password" : "Current password",
+                                    helperText: widget.forced ? "The one-time password you just logged in with" : null,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: _newController,
+                                  obscureText: true,
+                                  decoration: const InputDecoration(labelText: "New password", helperText: "At least 8 characters"),
+                                  onSubmitted: (_) => _submit(),
+                                ),
+                                FormErrorText(_error),
+                                const SizedBox(height: 12),
+                                LoadingFilledButton(loading: _submitting, onPressed: _submit, child: const Text("Save")),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );

@@ -5,6 +5,11 @@ import '../models/purchase.dart';
 import '../models/units.dart';
 import '../offline/pending_purchase.dart';
 import '../state/app_scope.dart';
+import '../state/app_currency.dart';
+import 'common/adaptive_sheet.dart';
+import 'common/error_text.dart';
+import 'common/form_error_text.dart';
+import 'common/loading_button.dart';
 import 'sheet_padding.dart';
 
 /// Returns true if something changed (created, queued offline, or edited).
@@ -14,10 +19,13 @@ Future<bool?> showAddEditPurchaseSheet(
   required String projectName,
   Purchase? existing,
 }) {
-  return showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    builder: (context) => _AddEditPurchaseSheet(projectId: projectId, projectName: projectName, existing: existing),
+  return showAdaptiveSheet<bool>(
+    context,
+    builder: (context) => _AddEditPurchaseSheet(
+      projectId: projectId,
+      projectName: projectName,
+      existing: existing,
+    ),
   );
 }
 
@@ -25,19 +33,35 @@ class _AddEditPurchaseSheet extends StatefulWidget {
   final String projectId;
   final String projectName;
   final Purchase? existing;
-  const _AddEditPurchaseSheet({required this.projectId, required this.projectName, this.existing});
+  const _AddEditPurchaseSheet({
+    required this.projectId,
+    required this.projectName,
+    this.existing,
+  });
 
   @override
   State<_AddEditPurchaseSheet> createState() => _AddEditPurchaseSheetState();
 }
 
 class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
-  late final _amountController = TextEditingController(text: widget.existing?.amount.toStringAsFixed(2) ?? "");
-  late final _descriptionController = TextEditingController(text: widget.existing?.description ?? "");
-  late final _quantityController = TextEditingController(text: widget.existing?.quantity?.toString() ?? "");
-  late final _vendorController = TextEditingController(text: widget.existing?.vendor ?? "");
-  late final _categoryController = TextEditingController(text: widget.existing?.category ?? "");
-  late final _notesController = TextEditingController(text: widget.existing?.notes ?? "");
+  late final _amountController = TextEditingController(
+    text: widget.existing?.amount.toStringAsFixed(2) ?? "",
+  );
+  late final _descriptionController = TextEditingController(
+    text: widget.existing?.description ?? "",
+  );
+  late final _quantityController = TextEditingController(
+    text: widget.existing?.quantity?.toString() ?? "",
+  );
+  late final _vendorController = TextEditingController(
+    text: widget.existing?.vendor ?? "",
+  );
+  late final _categoryController = TextEditingController(
+    text: widget.existing?.category ?? "",
+  );
+  late final _notesController = TextEditingController(
+    text: widget.existing?.notes ?? "",
+  );
   late String? _unit = widget.existing?.unit;
   bool _submitting = false;
   String? _error;
@@ -76,7 +100,9 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
         return;
       }
     } else if (_unit != null) {
-      setState(() => _error = "Enter a quantity for that unit, or clear the unit.");
+      setState(
+        () => _error = "Enter a quantity for that unit, or clear the unit.",
+      );
       return;
     }
 
@@ -86,9 +112,15 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
     });
 
     final scope = AppScope.of(context);
-    final vendor = _vendorController.text.trim().isEmpty ? null : _vendorController.text.trim();
-    final category = _categoryController.text.trim().isEmpty ? null : _categoryController.text.trim();
-    final notes = _notesController.text.trim().isEmpty ? null : _notesController.text.trim();
+    final vendor = _vendorController.text.trim().isEmpty
+        ? null
+        : _vendorController.text.trim();
+    final category = _categoryController.text.trim().isEmpty
+        ? null
+        : _categoryController.text.trim();
+    final notes = _notesController.text.trim().isEmpty
+        ? null
+        : _notesController.text.trim();
 
     try {
       if (widget.existing != null) {
@@ -119,23 +151,31 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
     } on NetworkUnavailableException {
       if (widget.existing != null) {
         // Edits require connectivity by design — only "add" is queueable.
-        setState(() => _error = "Can't reach the server to save this edit. Try again once you're back online.");
+        setState(() => _error = networkUnavailableMessage);
       } else {
-        await scope.offlineQueue.add(PendingPurchase(
-          localId: PendingPurchase.newLocalId(),
-          projectId: widget.projectId,
-          projectName: widget.projectName,
-          amount: amount,
-          description: _descriptionController.text.trim(),
-          quantity: quantity,
-          unit: _unit,
-          vendor: vendor,
-          category: category,
-          notes: notes,
-          createdAtLocal: DateTime.now(),
-        ));
+        await scope.offlineQueue.add(
+          PendingPurchase(
+            localId: PendingPurchase.newLocalId(),
+            projectId: widget.projectId,
+            projectName: widget.projectName,
+            amount: amount,
+            description: _descriptionController.text.trim(),
+            quantity: quantity,
+            unit: _unit,
+            vendor: vendor,
+            category: category,
+            notes: notes,
+            createdAtLocal: DateTime.now(),
+          ),
+        );
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Offline — saved locally, will sync automatically.")));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Offline — saved locally, will sync automatically.",
+              ),
+            ),
+          );
           Navigator.of(context).pop(true);
         }
       }
@@ -155,14 +195,25 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(widget.existing == null ? "Add cash purchase" : "Edit purchase", style: Theme.of(context).textTheme.titleLarge),
-            Text(widget.projectName, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              widget.existing == null ? "Add cash purchase" : "Edit purchase",
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            Text(
+              widget.projectName,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: _amountController,
               autofocus: true,
-              decoration: const InputDecoration(labelText: "Amount", prefixText: "\$ "),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: "Amount",
+                prefixText: currencySymbol(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -176,8 +227,12 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
                 Expanded(
                   child: TextField(
                     controller: _quantityController,
-                    decoration: const InputDecoration(labelText: "Quantity (optional)"),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: "Quantity (optional)",
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -187,7 +242,8 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
                     decoration: const InputDecoration(labelText: "Unit"),
                     items: [
                       const DropdownMenuItem(value: null, child: Text("—")),
-                      for (final u in units) DropdownMenuItem(value: u, child: Text(u)),
+                      for (final u in units)
+                        DropdownMenuItem(value: u, child: Text(u)),
                     ],
                     onChanged: (v) => setState(() => _unit = v),
                   ),
@@ -195,9 +251,17 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
               ],
             ),
             const SizedBox(height: 12),
-            TextField(controller: _vendorController, decoration: const InputDecoration(labelText: "Vendor (optional)")),
+            TextField(
+              controller: _vendorController,
+              decoration: const InputDecoration(labelText: "Vendor (optional)"),
+            ),
             const SizedBox(height: 12),
-            TextField(controller: _categoryController, decoration: const InputDecoration(labelText: "Category (optional)")),
+            TextField(
+              controller: _categoryController,
+              decoration: const InputDecoration(
+                labelText: "Category (optional)",
+              ),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: _notesController,
@@ -205,17 +269,12 @@ class _AddEditPurchaseSheetState extends State<_AddEditPurchaseSheet> {
               minLines: 1,
               maxLines: 3,
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ],
+            FormErrorText(_error),
             const SizedBox(height: 16),
-            FilledButton(
-              onPressed: _submitting ? null : _submit,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: _submitting ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text("Save"),
-              ),
+            LoadingFilledButton(
+              loading: _submitting,
+              onPressed: _submit,
+              child: const Text("Save"),
             ),
           ],
         ),

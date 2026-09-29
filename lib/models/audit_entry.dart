@@ -30,6 +30,10 @@ class AuditEntry {
         entityId: json["entityId"] as String,
         before: json["before"] as Map<String, dynamic>?,
         after: json["after"] as Map<String, dynamic>?,
-        createdAt: DateTime.parse(json["createdAt"] as String),
+        // The server always sends UTC (Mongoose Dates serialize with a 'Z'
+        // suffix) — converting to local here, once, at the data boundary,
+        // means every display site downstream (DateFormat.format(...)) just
+        // works without each one remembering to call .toLocal() itself.
+        createdAt: DateTime.parse(json["createdAt"] as String).toLocal(),
       );
 }

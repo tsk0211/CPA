@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/project.dart';
 import '../state/app_scope.dart';
+import 'common/loading_indicator.dart';
 
 Future<List<Project>?> showProjectMultiSelectSheet(BuildContext context, {required List<Project> initiallySelected}) {
   return showModalBottomSheet<List<Project>>(
@@ -91,7 +92,7 @@ class _ProjectMultiSelectSheetState extends State<_ProjectMultiSelectSheet> {
                 ),
               Expanded(
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const LoadingView()
                     : ListView.builder(
                         controller: scrollController,
                         itemCount: _items.length,

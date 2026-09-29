@@ -1,7 +1,30 @@
 # CPA — Cash Purchase Accounting
 
-Mobile app (Flutter, iOS + Android) for a team to track cash purchases across multiple projects,
-centrally — see `server/README.md` for the backend (roles, auth, audit trail, exports).
+Flutter app (iOS + Android + Windows/macOS/Linux/web) for a team to track cash purchases across
+multiple projects, centrally — see `server/README.md` for the backend (roles, auth, audit trail,
+exports). Every user runs the same app and the same codebase; the desktop-width layout is a
+different arrangement of the same screens, not a separate build.
+
+## Desktop, and the review/approval workflow
+
+Anyone can run the app on desktop, but its extra screen real estate is aimed at Owner/Admin: a
+`NavigationRail` replaces the phone's bottom nav once the window is ≥900px wide (`lib/widgets/
+breakpoints.dart`), Projects/Team render as sortable `DataTable`s instead of scrolling list tiles,
+and two desktop-first pieces round it out:
+
+- **Dashboard** (`lib/screens/dashboard_screen.dart`) — a desktop-only landing page (mirroring the
+  decision, already made for the mobile Activity tab, that a "Today"-style landing screen doesn't
+  belong on the phone). Stat tiles (active projects, this month's approved spend, pending review
+  count, team size — each trimmed to what the viewer's role can actually see) plus a recent-
+  activity list. No charts, on purpose — same call as Reports (see below).
+- **Review** (`lib/screens/review_screen.dart`) — the admin review queue this whole desktop push
+  was really for. A Member's purchase now starts **pending** instead of counting immediately:
+  Owner/Admin clear the queue here (desktop: a data table; mobile: cards — Owner/Admin can also
+  review from the Project Detail purchases list, and from their phone), approving or rejecting
+  with a required reason. Only approved purchases count toward a project's total or show up in
+  Reports — see `server/README.md` for the full rule. Owner/Admin's own purchases are
+  auto-approved; they could already edit/delete anything outright, so making them review their own
+  entries would just be friction.
 
 ## Core loop
 
@@ -21,10 +44,11 @@ centrally — see `server/README.md` for the backend (roles, auth, audit trail, 
 ## Roles affect the UI directly
 
 Every role-gated action in `server/` (add/edit/delete purchase, manage projects, export, manage
-users) has a matching `Role` getter in `lib/models/role.dart` that hides/disables the
-corresponding button — Member never sees an edit/delete swipe action, Analyst never sees an "add
-purchase" button, etc. The server still enforces all of this independently; the client-side gating
-is about not showing controls that would just 403, not the actual security boundary.
+users, review a pending purchase) has a matching `Role` getter in `lib/models/role.dart` that
+hides/disables the corresponding button — Member never sees an edit/delete swipe action, Analyst
+never sees an "add purchase" button, Member/Analyst never see the Review destination, etc. The
+server still enforces all of this independently; the client-side gating is about not showing
+controls that would just 403, not the actual security boundary.
 
 ## Auth
 
@@ -56,7 +80,19 @@ flutter pub get
 flutter run   # defaults to the deployed Render server (see server/README.md)
 # or, for local dev against `npm run dev` in server/:
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:4000   # Android emulator -> local server
+
+# Desktop (any platform Flutter is configured for here — windows/macos/linux/web all scaffolded):
+flutter run -d windows --dart-define=API_BASE_URL=http://localhost:4000
+flutter run -d chrome  --dart-define=API_BASE_URL=http://localhost:4000
 ```
+
+## Web frontend (Next.js)
+
+A second, independent web client lives in `frontend/` — a Next.js static export deployed to
+GitHub Pages (`https://tsk0211.github.io/CPA/CPA-next/`), talking to the same `server/` API.
+It's a from-scratch reimplementation of the same core loop (auth, dashboard, Projects, Review,
+Reports, Team) rather than a Flutter-web build, with a light/dark theme toggle. See
+`frontend/README.md` and `frontend/AGENTS.md`.
 
 ## Tests
 

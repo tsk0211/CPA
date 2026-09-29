@@ -7,10 +7,13 @@ import 'detail_row.dart';
 const _actionLabels = {
   "project.create": "created project",
   "project.rename": "edited project",
+  "project.auto_approve_threshold_change": "changed the auto-approve threshold",
   "project.delete": "deleted project",
   "purchase.create": "logged a purchase",
   "purchase.edit": "edited a purchase",
   "purchase.delete": "deleted a purchase",
+  "purchase.approve": "approved a purchase",
+  "purchase.reject": "rejected a purchase",
   "user.create": "created an account",
   "user.role_change": "changed a role",
   "user.deactivate": "deactivated an account",

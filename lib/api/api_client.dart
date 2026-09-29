@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -90,6 +89,20 @@ class ApiClient {
     }
   }
 
+  /// Unauthenticated, short-timeout ping at GET /health — for the Login
+  /// screen's status light, not the normal request pipeline (no token
+  /// header, no 401-refresh-retry, and it never throws: a down/unreachable/
+  /// still-booting server is just `false`, which is exactly what a polling
+  /// loop wants to act on).
+  Future<bool> checkHealth() async {
+    try {
+      final res = await _http.get(Uri.parse("$apiBaseUrl/health")).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> get(String path, {Map<String, String>? query}) async => _decode(await _send("GET", path, query: query));
 
   Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) async => _decode(await _send("POST", path, body: body));
@@ -139,9 +152,11 @@ class ApiClient {
           default:
             throw ArgumentError("unsupported method $method");
         }
-      } on SocketException {
-        throw NetworkUnavailableException();
-      } on HttpException {
+      } on http.ClientException {
+        // Thrown by package:http on a connection failure (host unreachable,
+        // refused, DNS failure, …) on every platform including web — where
+        // dart:io's SocketException/HttpException don't exist at all, so
+        // this is the one exception type safe to catch cross-platform.
         throw NetworkUnavailableException();
       }
     }

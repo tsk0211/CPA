@@ -184,6 +184,7 @@ async function main() {
     purchase.status === 201 && purchase.body.quantity === 5 && purchase.body.unit === "bag" && purchase.body.vendor === "ACME Supplies",
     "member logs a purchase with quantity/unit/vendor/category/notes",
   );
+  assert(purchase.body.status === "pending", "a member's purchase starts pending review, not auto-approved");
   const purchaseId = purchase.body._id;
 
   // Retrying the exact same idempotency key (a dropped response, a
@@ -216,14 +217,42 @@ async function main() {
   );
   assert(badUnit.status === 400, "an unrecognized unit is rejected");
 
-  // The project list's aggregated totalSpent must reflect real purchases —
-  // this specifically regression-tests a bug where the totals aggregation
-  // silently matched nothing (Purchase.projectId is a string, Project._id
-  // is an ObjectId, and .aggregate() doesn't auto-cast between them the
-  // way .find() does).
+  // A pending purchase must NOT move the project's total yet — it's still
+  // awaiting review.
+  const projectsWhilePending = await req("/projects", {}, adminToken0);
+  const warehouseWhilePending = (projectsWhilePending.body.items as { _id: string; totalSpent: number }[]).find((p) => p._id === projectId);
+  assert(warehouseWhilePending?.totalSpent === 0, "a pending purchase doesn't count toward totalSpent yet");
+
+  // --- Review workflow: only owner/admin can approve/reject, and only a pending purchase ---
+
+  const memberTryReview = await req(`/purchases/${purchaseId}/review`, { method: "PATCH", body: JSON.stringify({ action: "approve" }) }, memberToken0);
+  assert(memberTryReview.status === 403, "member cannot review a purchase");
+  const analystTryReview = await req(`/purchases/${purchaseId}/review`, { method: "PATCH", body: JSON.stringify({ action: "approve" }) }, analystToken0);
+  assert(analystTryReview.status === 403, "analyst cannot review a purchase");
+
+  const pendingQueue = await req("/purchases/pending", {}, adminToken0);
+  assert(
+    pendingQueue.status === 200 && (pendingQueue.body.items as { _id: string }[]).some((p) => p._id === purchaseId),
+    "the pending review queue includes the member's newly logged purchase",
+  );
+
+  const rejectWithoutReason = await req(`/purchases/${purchaseId}/review`, { method: "PATCH", body: JSON.stringify({ action: "reject" }) }, adminToken0);
+  assert(rejectWithoutReason.status === 400, "rejecting requires a reason");
+
+  const approve = await req(`/purchases/${purchaseId}/review`, { method: "PATCH", body: JSON.stringify({ action: "approve" }) }, adminToken0);
+  assert(approve.status === 200 && approve.body.status === "approved", "admin approves the pending purchase");
+
+  const reReview = await req(`/purchases/${purchaseId}/review`, { method: "PATCH", body: JSON.stringify({ action: "approve" }) }, adminToken0);
+  assert(reReview.status === 409, "reviewing an already-reviewed purchase is rejected as a conflict");
+
+  // The project list's aggregated totalSpent must reflect real, approved
+  // purchases — this specifically regression-tests a bug where the totals
+  // aggregation silently matched nothing (Purchase.projectId is a string,
+  // Project._id is an ObjectId, and .aggregate() doesn't auto-cast between
+  // them the way .find() does).
   const projectsWithTotal = await req("/projects", {}, adminToken0);
   const warehouseProject = (projectsWithTotal.body.items as { _id: string; totalSpent: number }[]).find((p) => p._id === projectId);
-  assert(warehouseProject?.totalSpent === 250.5, "project list's totalSpent reflects an actual logged purchase, not just 0");
+  assert(warehouseProject?.totalSpent === 250.5, "approving a purchase makes it count toward the project's totalSpent");
 
   // Member tries to edit/delete their own purchase -> forbidden.
   const memberEdit = await req("/purchases/" + purchaseId, { method: "PATCH", body: JSON.stringify({ amount: 1 }) }, memberToken0);
@@ -249,6 +278,31 @@ async function main() {
 
   const projectPurchasesAfterDelete = await req(`/purchases/project/${projectId}`, {}, adminToken0);
   assert(projectPurchasesAfterDelete.body.items.length === 0, "soft-deleted purchase no longer appears in project purchase list");
+
+  // A second purchase, rejected instead of approved, should never count —
+  // and, unlike a soft-deleted one, it still shows up in the plain project
+  // purchase list above (only /search and /export filter to approved-only),
+  // so this runs after that assertion rather than before it.
+  const purchase2 = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId, amount: 40, description: "Questionable receipt", idempotencyKey: "idem-key-reject-1" }) },
+    memberToken0,
+  );
+  const purchase2Id = purchase2.body._id;
+  const reject = await req(
+    `/purchases/${purchase2Id}/review`,
+    { method: "PATCH", body: JSON.stringify({ action: "reject", reason: "no matching receipt" }) },
+    adminToken0,
+  );
+  assert(reject.status === 200 && reject.body.status === "rejected" && reject.body.rejectionReason === "no matching receipt", "admin rejects a purchase with a reason");
+  const projectsAfterReject = await req("/projects", {}, adminToken0);
+  const warehouseAfterReject = (projectsAfterReject.body.items as { _id: string; totalSpent: number }[]).find((p) => p._id === projectId);
+  assert(warehouseAfterReject?.totalSpent === 0, "a rejected purchase never counts toward totalSpent");
+  const pendingQueueAfterReject = await req("/purchases/pending", {}, adminToken0);
+  assert(
+    !(pendingQueueAfterReject.body.items as { _id: string }[]).some((p) => p._id === purchase2Id),
+    "a reviewed purchase drops out of the pending queue",
+  );
 
   // A deleted purchase must also drop out of the project's totalSpent —
   // both the list endpoint's aggregation and the single-project GET the
@@ -314,7 +368,7 @@ async function main() {
   const auditLog = await req("/audit-log", {}, adminToken0);
   assert(auditLog.status === 200 && Array.isArray(auditLog.body.items), "admin can read paginated audit log");
   const actions = (auditLog.body.items as { action: string }[]).map((a) => a.action);
-  for (const expected of ["user.create", "project.create", "purchase.create", "purchase.edit", "purchase.delete"]) {
+  for (const expected of ["user.create", "project.create", "purchase.create", "purchase.edit", "purchase.delete", "purchase.approve", "purchase.reject"]) {
     assert(actions.includes(expected), `audit log contains a ${expected} entry`);
   }
   const editEntry = (auditLog.body.items as { action: string; before: { amount: number }; after: { amount: number } }[]).find(
@@ -328,7 +382,7 @@ async function main() {
   const projectActions = (projectAuditLog.body.items as { action: string }[]).map((a) => a.action);
   assert(
     projectAuditLog.status === 200 &&
-      ["project.create", "purchase.create", "purchase.edit", "purchase.delete"].every((a) => projectActions.includes(a)) &&
+      ["project.create", "purchase.create", "purchase.approve", "purchase.edit", "purchase.delete"].every((a) => projectActions.includes(a)) &&
       !projectActions.includes("user.create"),
     "audit log scoped to one project includes its own history but not unrelated user-management entries",
   );
@@ -336,6 +390,78 @@ async function main() {
   // Member cannot read audit log.
   const memberAuditLog = await req("/audit-log", {}, memberToken0);
   assert(memberAuditLog.status === 403, "member cannot read audit log");
+
+  // --- Audit log filters (person/action/date) + export ---
+
+  const meRes = await req("/auth/me", {}, adminToken0);
+  const adminId = meRes.body.id;
+
+  const byActor = await req(`/audit-log?actorId=${adminId}`, {}, adminToken0);
+  assert(
+    byActor.status === 200 && (byActor.body.items as { actorId: string }[]).every((a) => a.actorId === adminId),
+    "audit log filters by actorId (person)",
+  );
+
+  const byAction = await req("/audit-log?action=purchase.approve", {}, adminToken0);
+  assert(
+    byAction.status === 200 && (byAction.body.items as { action: string }[]).every((a) => a.action === "purchase.approve"),
+    "audit log filters by action",
+  );
+
+  const farFuture = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const byDateExcludesEverything = await req(`/audit-log?from=${farFuture}`, {}, adminToken0);
+  assert(byDateExcludesEverything.status === 200 && byDateExcludesEverything.body.items.length === 0, "audit log date filter (from in the future) excludes existing entries");
+
+  const combinedFilter = await req(`/audit-log?actorId=${adminId}&action=project.create`, {}, adminToken0);
+  assert(
+    combinedFilter.status === 200 && combinedFilter.body.items.length > 0 && combinedFilter.body.items.every((a: { action: string }) => a.action === "project.create"),
+    "audit log filters combine (actorId + action) with AND",
+  );
+
+  const auditExport = await reqBinary("/audit-log/export", adminToken0);
+  assert(
+    auditExport.status === 200 &&
+      auditExport.contentType?.includes("spreadsheetml") === true &&
+      auditExport.byteLength > 0,
+    "audit log exports as a non-empty .xlsx workbook",
+  );
+
+  const memberAuditExport = await reqBinary("/audit-log/export", memberToken0);
+  assert(memberAuditExport.status === 403, "member cannot export the audit log");
+
+  // --- Per-project auto-approve threshold ---
+
+  const thresholdProject = await req("/projects", { method: "POST", body: JSON.stringify({ name: "Small Repairs" }) }, adminToken0);
+  const thresholdProjectId = thresholdProject.body._id;
+  assert(thresholdProject.body.autoApproveThreshold === 0, "a new project defaults autoApproveThreshold to 0 (always review)");
+
+  const raiseThreshold = await req(
+    `/projects/${thresholdProjectId}`,
+    { method: "PATCH", body: JSON.stringify({ name: "Small Repairs", icon: "🔧", autoApproveThreshold: 100 }) },
+    adminToken0,
+  );
+  assert(raiseThreshold.status === 200 && raiseThreshold.body.autoApproveThreshold === 100, "admin raises a project's auto-approve threshold");
+
+  const thresholdAuditLog = await req(`/audit-log?projectId=${thresholdProjectId}&action=project.auto_approve_threshold_change`, {}, adminToken0);
+  const thresholdEntry = thresholdAuditLog.body.items[0] as { before: { autoApproveThreshold: number }; after: { autoApproveThreshold: number } };
+  assert(
+    thresholdAuditLog.body.items.length === 1 && thresholdEntry.before.autoApproveThreshold === 0 && thresholdEntry.after.autoApproveThreshold === 100,
+    "raising the threshold logs a from -> to audit entry",
+  );
+
+  const underThreshold = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId: thresholdProjectId, amount: 50, description: "Small hardware", idempotencyKey: "idem-small-1" }) },
+    memberToken0,
+  );
+  assert(underThreshold.body.status === "approved", "a member's purchase at or under the threshold auto-approves");
+
+  const overThreshold = await req(
+    "/purchases",
+    { method: "POST", body: JSON.stringify({ projectId: thresholdProjectId, amount: 150, description: "Bigger hardware", idempotencyKey: "idem-big-1" }) },
+    memberToken0,
+  );
+  assert(overThreshold.body.status === "pending", "a member's purchase over the threshold still enters the review queue");
 
   // Team user list is paginated + searchable too.
   const searchedUsers = await req("/users?search=Admin", {}, ownerToken);

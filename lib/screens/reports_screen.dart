@@ -1,14 +1,22 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../api/api_exception.dart';
+import '../state/app_currency.dart';
 import '../models/project.dart';
 import '../models/purchase.dart';
 import '../state/app_scope.dart';
+import '../theme.dart';
+import '../widgets/breakpoints.dart';
+import '../widgets/common/empty_state.dart';
+import '../widgets/common/error_text.dart';
+import '../widgets/common/form_error_text.dart';
+import '../widgets/common/icon_badge.dart';
+import '../widgets/common/loading_indicator.dart';
+import '../utils/date_range.dart';
 import '../widgets/project_multi_select_sheet.dart';
 import '../widgets/responsive_center.dart';
 
@@ -85,7 +93,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Future<void> _pickProjects() async {
-    final result = await showProjectMultiSelectSheet(context, initiallySelected: _selectedProjects);
+    final result = await showProjectMultiSelectSheet(
+      context,
+      initiallySelected: _selectedProjects,
+    );
     if (!mounted || result == null) return;
     setState(() {
       _selectedProjects
@@ -111,8 +122,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final (paged, totalAmount) = await AppScope.of(context).purchases.search(
         page: reset ? 1 : _previewPage + 1,
         projectIds: _selectedProjects.map((p) => p.id).toList(),
-        from: from,
-        to: to,
+        from: from == null ? null : startOfLocalDayUtc(from),
+        to: to == null ? null : endOfLocalDayUtc(to),
       );
       if (!mounted || requestId != _previewRequestId) return;
       setState(() {
@@ -134,9 +145,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
       setState(() => _previewError = e.message);
     } on NetworkUnavailableException {
       if (!mounted || requestId != _previewRequestId) return;
-      setState(() => _previewError = "Can't reach the server. Reports need a live connection.");
+      setState(() => _previewError = networkUnavailableMessage);
     } finally {
-      if (mounted && requestId == _previewRequestId) setState(() => _previewLoading = false);
+      if (mounted && requestId == _previewRequestId) {
+        setState(() => _previewLoading = false);
+      }
     }
   }
 
@@ -150,19 +163,27 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final (bytes, filename) = await AppScope.of(context).purchases.export(
         format: _format,
         projectIds: _selectedProjects.map((p) => p.id).toList(),
-        from: from,
-        to: to,
+        from: from == null ? null : startOfLocalDayUtc(from),
+        to: to == null ? null : endOfLocalDayUtc(to),
         includeAuditTrail: _includeAuditTrail,
       );
 
-      final dir = await getTemporaryDirectory();
-      final file = File("${dir.path}/$filename");
-      await file.writeAsBytes(bytes);
-      await Share.shareXFiles([XFile(file.path)], text: "CPA export");
+      // XFile.fromData (not a real File path) — works on every platform,
+      // including web where there's no filesystem to write a temp file to.
+      final mimeType = _format == "xlsx"
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "text/csv";
+      await Share.shareXFiles([
+        XFile.fromData(
+          Uint8List.fromList(bytes),
+          name: filename,
+          mimeType: mimeType,
+        ),
+      ], text: "CPA export");
     } on ApiException catch (e) {
       setState(() => _exportError = e.message);
     } on NetworkUnavailableException {
-      setState(() => _exportError = "Can't reach the server. Reports need a live connection.");
+      setState(() => _exportError = networkUnavailableMessage);
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
@@ -171,109 +192,170 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final dateFormat = DateFormat.yMMMd();
-    final currency = NumberFormat.simpleCurrency();
+    final currency = currencyFormat();
     final (from, to) = _resolvedRange;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Reports")),
       body: ResponsiveCenter(
+        maxWidth: isDesktop(context) ? 900 : 720,
         child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text("Date range", style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              ChoiceChip(label: const Text("All time"), selected: _preset == _DatePreset.all, onSelected: (_) => _setPreset(_DatePreset.all)),
-              ChoiceChip(label: const Text("Today"), selected: _preset == _DatePreset.today, onSelected: (_) => _setPreset(_DatePreset.today)),
-              ChoiceChip(label: const Text("This week"), selected: _preset == _DatePreset.thisWeek, onSelected: (_) => _setPreset(_DatePreset.thisWeek)),
-              ChoiceChip(label: const Text("This month"), selected: _preset == _DatePreset.thisMonth, onSelected: (_) => _setPreset(_DatePreset.thisMonth)),
-              ActionChip(
-                label: Text(_preset == _DatePreset.custom && _customRange != null
-                    ? "${dateFormat.format(_customRange!.start)} – ${dateFormat.format(_customRange!.end)}"
-                    : "Custom…"),
-                onPressed: _pickCustomRange,
-              ),
-            ],
-          ),
-          if (from != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text("From ${dateFormat.format(from)}${to != null ? ' to ${dateFormat.format(to)}' : ''}", style: Theme.of(context).textTheme.bodySmall)),
-          const SizedBox(height: 20),
-          Text("Projects", style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _pickProjects,
-            icon: const Icon(Icons.search),
-            label: Text(_selectedProjects.isEmpty ? "All projects" : "${_selectedProjects.length} project(s) selected"),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("Preview", style: Theme.of(context).textTheme.titleSmall),
-              if (_previewLoaded) Text(currency.format(_previewTotalAmount), style: Theme.of(context).textTheme.titleSmall),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (_previewError != null) ...[
-            Text(_previewError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text("Date range", style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-          ],
-          if (_previewLoading && _previewItems.isEmpty)
-            const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
-          else if (_previewLoaded && _previewItems.isEmpty)
-            const Padding(padding: EdgeInsets.all(16), child: Center(child: Text("No purchases match these filters.")))
-          else
-            for (final p in _previewItems)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: p.projectIcon != null ? Text(p.projectIcon!, style: const TextStyle(fontSize: 20)) : null,
-                title: Text(p.description, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(
-                  [if (p.projectName != null) p.projectName!, dateFormat.format(p.purchasedAt)].join(" · "),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text("All time"),
+                  selected: _preset == _DatePreset.all,
+                  onSelected: (_) => _setPreset(_DatePreset.all),
                 ),
-                trailing: Text(currency.format(p.amount)),
+                ChoiceChip(
+                  label: const Text("Today"),
+                  selected: _preset == _DatePreset.today,
+                  onSelected: (_) => _setPreset(_DatePreset.today),
+                ),
+                ChoiceChip(
+                  label: const Text("This week"),
+                  selected: _preset == _DatePreset.thisWeek,
+                  onSelected: (_) => _setPreset(_DatePreset.thisWeek),
+                ),
+                ChoiceChip(
+                  label: const Text("This month"),
+                  selected: _preset == _DatePreset.thisMonth,
+                  onSelected: (_) => _setPreset(_DatePreset.thisMonth),
+                ),
+                ActionChip(
+                  label: Text(
+                    _preset == _DatePreset.custom && _customRange != null
+                        ? "${dateFormat.format(_customRange!.start)} – ${dateFormat.format(_customRange!.end)}"
+                        : "Custom…",
+                  ),
+                  onPressed: _pickCustomRange,
+                ),
+              ],
+            ),
+            if (from != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  "From ${dateFormat.format(from)}${to != null ? ' to ${dateFormat.format(to)}' : ''}",
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
-          if (_previewHasMore)
-            Center(
-              child: TextButton(
-                onPressed: _previewLoading ? null : () => _loadPreview(reset: false),
-                child: _previewLoading
-                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text("Load more"),
+            const SizedBox(height: 20),
+            Text("Projects", style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _pickProjects,
+              icon: const Icon(Icons.search),
+              label: Text(
+                _selectedProjects.isEmpty
+                    ? "All projects"
+                    : "${_selectedProjects.length} project(s) selected",
               ),
             ),
-          const SizedBox(height: 20),
-          Text("Format", style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: "csv", label: Text("CSV")),
-              ButtonSegment(value: "xlsx", label: Text("Excel (.xlsx)")),
-            ],
-            selected: {_format},
-            onSelectionChanged: (s) => setState(() => _format = s.first),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text("Include audit trail sheet"),
-            subtitle: const Text("Who changed what, for this scope — Excel only"),
-            value: _format == "xlsx" && _includeAuditTrail,
-            onChanged: _format == "xlsx" ? (v) => setState(() => _includeAuditTrail = v) : null,
-          ),
-          if (_exportError != null) ...[
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Preview", style: Theme.of(context).textTheme.titleSmall),
+                if (_previewLoaded)
+                  Text(
+                    currency.format(_previewTotalAmount),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
-            Text(_exportError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            if (_previewError != null) ...[
+              FormErrorText(_previewError),
+              const SizedBox(height: 8),
+            ],
+            if (_previewLoading && _previewItems.isEmpty)
+              const Padding(padding: EdgeInsets.all(16), child: LoadingView())
+            else if (_previewLoaded && _previewItems.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: EmptyState(
+                  icon: Icons.search_off,
+                  title: "No purchases match these filters",
+                ),
+              )
+            else
+              for (final p in _previewItems)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: p.projectIcon != null
+                      ? EmojiBadge(
+                          emoji: p.projectIcon!,
+                          color: colorForKey(p.projectId),
+                          size: 32,
+                        )
+                      : null,
+                  title: Text(
+                    p.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    [
+                      if (p.projectName != null) p.projectName!,
+                      dateFormat.format(p.purchasedAt),
+                    ].join(" · "),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Text(currency.format(p.amount)),
+                ),
+            if (_previewHasMore)
+              Center(
+                child: TextButton(
+                  onPressed: _previewLoading
+                      ? null
+                      : () => _loadPreview(reset: false),
+                  child: _previewLoading
+                      ? const InlineSpinner()
+                      : const Text("Load more"),
+                ),
+              ),
+            const SizedBox(height: 20),
+            Text("Format", style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: "csv", label: Text("CSV")),
+                ButtonSegment(value: "xlsx", label: Text("Excel (.xlsx)")),
+              ],
+              selected: {_format},
+              onSelectionChanged: (s) => setState(() => _format = s.first),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text("Include audit trail sheet"),
+              subtitle: const Text(
+                "Who changed what, for this scope — Excel only",
+              ),
+              value: _format == "xlsx" && _includeAuditTrail,
+              onChanged: _format == "xlsx"
+                  ? (v) => setState(() => _includeAuditTrail = v)
+                  : null,
+            ),
+            if (_exportError != null) ...[
+              const SizedBox(height: 8),
+              FormErrorText(_exportError),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _exporting ? null : _export,
+              icon: _exporting
+                  ? const InlineSpinner()
+                  : const Icon(Icons.ios_share),
+              label: const Text("Export"),
+            ),
           ],
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _exporting ? null : _export,
-            icon: _exporting ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.ios_share),
-            label: const Text("Export"),
-          ),
-        ],
         ),
       ),
     );

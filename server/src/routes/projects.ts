@@ -13,9 +13,12 @@ projectsRouter.use(requireAuth, blockIfMustChangePassword);
 // while Project._id is a real ObjectId — .find()/.findOne() cast between
 // the two automatically, but .aggregate() does NOT, so ids must be
 // stringified before being used in a $match/$in here.
+// Only approved purchases count toward the total — a Member's pending
+// purchase doesn't move the number until an Owner/Admin reviews it, and a
+// rejected one never does. See routes/purchases.ts for the review workflow.
 async function totalsByProjectId(projectIds: string[]): Promise<Map<string, number>> {
   const sums = await Purchase.aggregate<{ _id: string; total: number }>([
-    { $match: { projectId: { $in: projectIds }, deletedAt: null } },
+    { $match: { projectId: { $in: projectIds }, deletedAt: null, status: "approved" } },
     { $group: { _id: "$projectId", total: { $sum: "$amount" } } },
   ]);
   return new Map(sums.map((s) => [s._id, s.total]));
@@ -73,28 +76,108 @@ projectsRouter.post("/", requireRole("owner", "admin"), async (req: AuthedReques
 
 // Renaming and re-iconing a project are the same "edit" action from the
 // UI's perspective (one sheet, both fields) so they share one endpoint and
-// one audit entry.
+// one audit entry. autoApproveThreshold is a separate, optional field on
+// the same request but gets its own audit entry (a financial-control
+// change, not a cosmetic edit) — see models/AuditLog.ts.
 projectsRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
-  const { name, icon } = req.body as { name?: string; icon?: string };
+  const { name, icon, autoApproveThreshold } = req.body as { name?: string; icon?: string; autoApproveThreshold?: number };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+  if (autoApproveThreshold !== undefined && (typeof autoApproveThreshold !== "number" || autoApproveThreshold < 0)) {
+    return res.status(400).json({ error: "autoApproveThreshold must be a non-negative number" });
+  }
 
   const project = await Project.findOne({ _id: req.params.id, deletedAt: null });
   if (!project) return res.status(404).json({ error: "project not found" });
 
   const before = { name: project.name, icon: project.icon };
-  project.name = name.trim();
-  if (icon?.trim()) project.icon = icon.trim();
-  await project.save();
+  const nextName = name.trim();
+  const nextIcon = icon?.trim() || project.icon;
+  const nameOrIconChanged = nextName !== project.name || nextIcon !== project.icon;
+  project.name = nextName;
+  project.icon = nextIcon;
+  if (nameOrIconChanged) await project.save();
 
-  await logActivity(req, {
-    action: "project.rename",
-    entityType: "project",
-    entityId: project._id,
-    before,
-    after: { name: project.name, icon: project.icon },
-  });
+  if (nameOrIconChanged) {
+    await logActivity(req, {
+      action: "project.rename",
+      entityType: "project",
+      entityId: project._id,
+      before,
+      after: { name: project.name, icon: project.icon },
+    });
+  }
+
+  if (autoApproveThreshold !== undefined && autoApproveThreshold !== project.autoApproveThreshold) {
+    const thresholdBefore = project.autoApproveThreshold;
+    project.autoApproveThreshold = autoApproveThreshold;
+    await project.save();
+
+    await logActivity(req, {
+      action: "project.auto_approve_threshold_change",
+      entityType: "project",
+      entityId: project._id,
+      before: { autoApproveThreshold: thresholdBefore },
+      after: { autoApproveThreshold: project.autoApproveThreshold },
+    });
+
+    // Re-evaluate purchases already sitting in this project's review queue
+    // against the new threshold — anything that would now qualify for
+    // auto-approve (same rule as at creation, see routes/purchases.ts) gets
+    // approved immediately rather than left stuck under a now-stale limit.
+    // Offline-captured purchases are excluded: those always require manual
+    // review regardless of amount, which the threshold has no bearing on.
+    const newlyQualifying = await Purchase.find({
+      projectId: project._id,
+      deletedAt: null,
+      status: "pending",
+      capturedOffline: { $ne: true },
+      amount: { $lte: autoApproveThreshold },
+    });
+    const now = new Date();
+    for (const purchase of newlyQualifying) {
+      purchase.status = "approved";
+      purchase.reviewedBy = req.user!.id;
+      purchase.reviewedAt = now;
+      await purchase.save();
+      await logActivity(req, {
+        action: "purchase.approve",
+        entityType: "purchase",
+        entityId: purchase._id,
+        before: { status: "pending" },
+        after: { status: "approved", reason: `auto-approved: project's threshold raised to ${autoApproveThreshold}` },
+      });
+    }
+  }
 
   res.json(project);
+});
+
+// Lets the client show "changing this will approve N pending purchases
+// totaling $X" before the admin commits to a threshold change via PATCH —
+// computed with the exact same rule PATCH itself applies, so the preview
+// never promises something the save doesn't actually do.
+projectsRouter.get("/:id/auto-approve-preview", requireRole("owner", "admin"), async (req, res) => {
+  const threshold = Number(req.query.threshold);
+  if (!Number.isFinite(threshold) || threshold < 0) {
+    return res.status(400).json({ error: "threshold must be a non-negative number" });
+  }
+
+  const project = await Project.findOne({ _id: req.params.id, deletedAt: null });
+  if (!project) return res.status(404).json({ error: "project not found" });
+
+  const filter = {
+    projectId: project._id,
+    deletedAt: null,
+    status: "pending",
+    capturedOffline: { $ne: true },
+    amount: { $lte: threshold },
+  };
+  const [count, totalAgg] = await Promise.all([
+    Purchase.countDocuments(filter),
+    Purchase.aggregate<{ _id: null; total: number }>([{ $match: filter }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
+  ]);
+
+  res.json({ count, totalAmount: totalAgg[0]?.total ?? 0 });
 });
 
 projectsRouter.delete("/:id", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {

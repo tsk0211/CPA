@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { Router } from "express";
 import { logActivity } from "../audit.js";
+import { buildDateFilter } from "../dateFilter.js";
 import { blockIfMustChangePassword, requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { Project } from "../models/Project.js";
@@ -21,7 +22,7 @@ purchasesRouter.use(requireAuth, blockIfMustChangePassword);
 // Purchase.idempotencyKey is what actually closes the race between the
 // findOne check below and a near-simultaneous duplicate request.
 purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: AuthedRequest, res) => {
-  const { projectId, amount, description, quantity, unit, vendor, category, notes, idempotencyKey } = req.body as {
+  const { projectId, amount, description, quantity, unit, vendor, category, notes, idempotencyKey, capturedOffline } = req.body as {
     projectId?: string;
     amount?: number;
     description?: string;
@@ -31,6 +32,7 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
     category?: string;
     notes?: string;
     idempotencyKey?: string;
+    capturedOffline?: boolean;
   };
   if (!projectId || !amount || amount <= 0 || !description?.trim() || !idempotencyKey?.trim()) {
     return res.status(400).json({ error: "projectId, a positive amount, a description, and an idempotencyKey are required" });
@@ -47,6 +49,20 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
   const project = await Project.findOne({ _id: projectId, deletedAt: null });
   if (!project) return res.status(404).json({ error: "project not found" });
 
+  // Owner/admin can already edit or delete any purchase outright, so making
+  // them review their own entries would just be friction — only a Member's
+  // purchase enters the pending queue for someone else to approve/reject.
+  // A Member's purchase at or under the project's autoApproveThreshold also
+  // skips the queue — see models/Project.ts. None of that applies to a
+  // purchase captured offline and synced later, regardless of role: it
+  // hasn't been checked against the server's current state, and two devices
+  // offline at once could independently log the same real-world purchase —
+  // forcing a human look at every one of these is cheaper than getting that
+  // wrong silently.
+  const autoApprove =
+    !capturedOffline &&
+    (req.user!.role === "owner" || req.user!.role === "admin" || amount <= project.autoApproveThreshold);
+
   let purchase;
   try {
     purchase = await Purchase.create({
@@ -60,6 +76,10 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
       notes: notes?.trim() || null,
       idempotencyKey,
       createdBy: req.user!.id,
+      capturedOffline: Boolean(capturedOffline),
+      status: autoApprove ? "approved" : "pending",
+      reviewedBy: autoApprove ? req.user!.id : null,
+      reviewedAt: autoApprove ? new Date() : null,
     });
   } catch (err) {
     // Lost the race against a near-simultaneous duplicate request with the
@@ -76,10 +96,75 @@ purchasesRouter.post("/", requireRole("owner", "admin", "member"), async (req: A
     action: "purchase.create",
     entityType: "purchase",
     entityId: purchase._id,
-    after: { projectId, amount: purchase.amount, description: purchase.description, quantity: purchase.quantity, unit: purchase.unit },
+    after: {
+      projectId,
+      amount: purchase.amount,
+      description: purchase.description,
+      quantity: purchase.quantity,
+      unit: purchase.unit,
+      capturedOffline: purchase.capturedOffline,
+    },
   });
 
   res.status(201).json(purchase);
+});
+
+// The desktop admin review queue: every pending purchase across all
+// projects, oldest first (fairness — nothing sits unreviewed forever just
+// because newer items keep landing on top). Owner/Admin only, same as the
+// review action itself below.
+purchasesRouter.get("/pending", requireRole("owner", "admin"), async (req, res) => {
+  const pageParams = parsePageParams(req);
+  const filter = { deletedAt: null, status: "pending" };
+
+  const [total, purchases] = await Promise.all([
+    Purchase.countDocuments(filter),
+    Purchase.find(filter)
+      .populate("projectId", "name icon")
+      .populate("createdBy", "name")
+      .sort({ purchasedAt: 1 })
+      .skip(pageParams.skip)
+      .limit(pageParams.limit),
+  ]);
+  res.json(toPagedResult(purchases, total, pageParams));
+});
+
+// Approve or reject a pending purchase. Only owner/admin can act — the same
+// people who could already edit/delete it outright. Approving/rejecting a
+// purchase that isn't currently pending is rejected as a conflict rather
+// than silently re-applied, since that'd usually mean two reviewers acted
+// on the same item at once.
+purchasesRouter.patch("/:id/review", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
+  const { action, reason } = req.body as { action?: string; reason?: string };
+  if (action !== "approve" && action !== "reject") {
+    return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
+  }
+  if (action === "reject" && !reason?.trim()) {
+    return res.status(400).json({ error: "a reason is required to reject a purchase" });
+  }
+
+  const purchase = await Purchase.findOne({ _id: req.params.id, deletedAt: null });
+  if (!purchase) return res.status(404).json({ error: "purchase not found" });
+  if (purchase.status !== "pending") {
+    return res.status(409).json({ error: `already ${purchase.status}` });
+  }
+
+  const before = { status: purchase.status };
+  purchase.status = action === "approve" ? "approved" : "rejected";
+  purchase.reviewedBy = req.user!.id;
+  purchase.reviewedAt = new Date();
+  purchase.rejectionReason = action === "reject" ? reason!.trim() : null;
+  await purchase.save();
+
+  await logActivity(req, {
+    action: action === "approve" ? "purchase.approve" : "purchase.reject",
+    entityType: "purchase",
+    entityId: purchase._id,
+    before,
+    after: { status: purchase.status, reason: purchase.rejectionReason, description: purchase.description, amount: purchase.amount },
+  });
+
+  res.json(purchase);
 });
 
 // Paginated + searchable (by description) — a busy project can accumulate
@@ -204,9 +289,13 @@ function parseProjectIds(raw: unknown): string[] | null {
   return typeof raw === "string" && raw.length > 0 ? raw.split(",") : null;
 }
 
+// Reports (preview + export) are official figures, so they only ever
+// reflect reviewed spend — a pending or rejected purchase doesn't show up
+// here until an Owner/Admin approves it via the review queue.
 function buildPurchaseFilter(projectIds: string[] | null, dateFilter: Record<string, Date>) {
   return {
     deletedAt: null,
+    status: "approved",
     ...(projectIds ? { projectId: { $in: projectIds } } : {}),
     ...(Object.keys(dateFilter).length ? { purchasedAt: dateFilter } : {}),
   };
@@ -233,6 +322,55 @@ purchasesRouter.get("/search", requireRole("owner", "admin", "analyst"), async (
   ]);
 
   res.json({ ...toPagedResult(purchases, total, pageParams), totalAmount: totalAmountAgg[0]?.total ?? 0 });
+});
+
+// Daily approved-spend totals for the trailing [days] days — feeds the
+// Dashboard's spend trend chart. Same approved/non-deleted/projectIds
+// scoping as /search and /export (buildPurchaseFilter) so the chart never
+// shows a different notion of "spend" than the rest of Reports does.
+purchasesRouter.get("/trend", requireRole("owner", "admin", "analyst"), async (req, res) => {
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
+  const projectIds = parseProjectIds(req.query.projectIds);
+
+  // The client sends its own UTC offset (e.g. "+05:30") so "day" here means
+  // the user's local calendar day, not a UTC day — the same class of bug
+  // fixed for Reports/Team's date filters (see lib/utils/date_range.dart):
+  // naive UTC bucketing silently shifts day boundaries by the user's offset
+  // (5.5 hours for India), so "today" in the chart wouldn't match "today"
+  // for the person looking at it.
+  const tzOffset = /^[+-]\d{2}:\d{2}$/.test(String(req.query.tzOffset)) ? String(req.query.tzOffset) : "+00:00";
+  const offsetSign = tzOffset[0] === "-" ? -1 : 1;
+  const offsetMinutes = offsetSign * (Number(tzOffset.slice(1, 3)) * 60 + Number(tzOffset.slice(4, 6)));
+
+  // Local midnight [days-1] days ago, expressed as the real UTC instant it
+  // corresponds to — shift "now" into the user's local frame to find that
+  // local midnight, then shift back to get an actual point in time.
+  const localNow = new Date(Date.now() + offsetMinutes * 60000);
+  localNow.setUTCHours(0, 0, 0, 0);
+  localNow.setUTCDate(localNow.getUTCDate() - (days - 1));
+  const from = new Date(localNow.getTime() - offsetMinutes * 60000);
+
+  const filter = buildPurchaseFilter(projectIds, { $gte: from });
+
+  const rows = await Purchase.aggregate<{ _id: string; total: number }>([
+    { $match: filter },
+    { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$purchasedAt", timezone: tzOffset } }, total: { $sum: "$amount" } } },
+    { $sort: { _id: 1 } },
+  ]);
+  const totalsByDay = new Map(rows.map((r) => [r._id, r.total]));
+
+  // Always return one point per day in range, zero-filled — the chart
+  // shouldn't have to guess whether a missing day means "no spend" or "we
+  // forgot to ask," and a client-side line chart wants a dense series.
+  const points: { date: string; total: number }[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(localNow);
+    d.setUTCDate(localNow.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    points.push({ date: key, total: totalsByDay.get(key) ?? 0 });
+  }
+
+  res.json({ points });
 });
 
 // --- Reports export (owner, admin, analyst) ---
@@ -338,13 +476,6 @@ purchasesRouter.get("/export", requireRole("owner", "admin", "analyst"), async (
   await workbook.xlsx.write(res);
   res.end();
 });
-
-function buildDateFilter(from: unknown, to: unknown): Record<string, Date> {
-  const filter: Record<string, Date> = {};
-  if (typeof from === "string" && from) filter.$gte = new Date(from);
-  if (typeof to === "string" && to) filter.$lte = new Date(to);
-  return filter;
-}
 
 function sendCsv(res: import("express").Response, filename: string, rows: Record<string, string | number>[]) {
   const headers =

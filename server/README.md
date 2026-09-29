@@ -1,8 +1,8 @@
 # CPA server
 
-Node/Express/TypeScript API backing the CPA mobile app. MongoDB (Atlas free M0 tier) for storage,
-short-lived JWT access tokens + long-lived refresh tokens for auth. Deploys to Render's free web
-service tier — $0, no card required, cold-starts after 15 min idle.
+Node/Express/TypeScript API backing the CPA app (mobile + desktop, one client). MongoDB (Atlas
+free M0 tier) for storage, short-lived JWT access tokens + long-lived refresh tokens for auth.
+Deploys to Render's free web service tier — $0, no card required, cold-starts after 15 min idle.
 
 ## Roles
 
@@ -11,12 +11,30 @@ service tier — $0, no card required, cold-starts after 15 min idle.
 | View projects & purchases | x | x | x | x |
 | Add purchase | x | x | | x |
 | Edit/delete purchase | x | x | | |
+| Approve/reject a pending purchase | x | x | | |
 | Create/rename/delete project | x | x | | |
 | Export (CSV/XLSX) | x | x | x | |
 | Create member/analyst accounts | x | x | | |
 | Create admin accounts | x | | | |
 | Deactivate admin accounts | x | | | |
 | Deactivate member/analyst accounts | x | x | | |
+
+## Purchase review workflow
+
+A purchase logged by a Member starts **pending**, not counted anywhere yet. An Owner or Admin
+reviews it — `PATCH /purchases/:id/review` with `{ action: "approve" }` or
+`{ action: "reject", reason }` (a reason is required to reject) — and only then does it become
+`approved` (counts toward the project's `totalSpent`, and toward Reports preview/export) or
+`rejected` (never counts, but is kept — nothing here is deleted, same as everywhere else in this
+app). Reviewing a purchase that isn't currently `pending` is a 409, not a silent no-op — that
+usually means two reviewers acted on the same item at once. `GET /purchases/pending` is the queue
+itself: every pending purchase, oldest first, Owner/Admin only — this is what backs the desktop
+app's Review screen.
+
+A purchase logged by an Owner or Admin is auto-approved on creation instead of entering the queue
+— they can already edit or delete any purchase outright, so making them review their own entries
+would just be friction with no fraud-prevention benefit (the audit trail already covers "who
+logged this").
 
 There is exactly one Owner, ever — seeded once from env vars the first time the server boots
 against an empty database (see `src/seedOwner.ts`), never created through the API. Every other
@@ -47,6 +65,8 @@ from the unscoped global trail on the Team screen.
 
 `GET /purchases/export?format=csv|xlsx&projectIds=id1,id2&from=ISO&to=ISO&includeAuditTrail=true`
 is the Reports screen's backing endpoint (Owner/Admin/Analyst only):
+- Only `approved` purchases are ever included — see "Purchase review workflow" above. Reports are
+  official figures; a pending or rejected purchase shows up in the Review queue, not here.
 - No `projectIds` → every active project. `from`/`to` filter by `purchasedAt`.
 - `format=xlsx` produces a real Excel workbook (`exceljs`) with typed columns, not just text.
 - `includeAuditTrail=true` (xlsx only — csv is a single flat file) adds a second "Audit Trail"
@@ -108,7 +128,9 @@ npm run dev        # http://localhost:4000
 npm test           # spins up a real in-memory MongoDB and exercises every role/permission
                     # path, the password-change gate, soft-delete, the audit trail, refresh
                     # token rotation + reuse detection, pagination/search, csv+xlsx export
-                    # (including the audit-trail sheet), and the login rate limiter
+                    # (including the audit-trail sheet), the login rate limiter, and the
+                    # purchase review workflow (pending -> approve/reject, the review queue,
+                    # and totals/exports only reflecting approved purchases)
 ```
 
 ## Deploy (Render free tier, $0)

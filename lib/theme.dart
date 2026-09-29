@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 import 'models/role.dart';
@@ -19,6 +20,20 @@ ThemeData buildTheme(Brightness brightness) {
     scaffoldBackgroundColor: colorScheme.surface,
     textTheme: textTheme,
     splashFactory: InkSparkle.splashFactory,
+
+    // A single, subtle fade for in-app Navigator.push transitions on every
+    // platform (was left at Flutter's per-platform defaults before — most
+    // visibly a jarring slide-in on Android). iOS keeps its native
+    // slide-from-right since users expect that there.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.macOS: FadeForwardsPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeForwardsPageTransitionsBuilder(),
+      },
+    ),
 
     appBarTheme: AppBarTheme(
       backgroundColor: colorScheme.surface,
@@ -63,16 +78,24 @@ ThemeData buildTheme(Brightness brightness) {
       ),
     ),
 
+    // Size(64, 48): a real minimum (Material's own 64dp/48dp guidance), not
+    // Size.fromHeight(48) — that shorthand sets width to double.infinity,
+    // which silently stretched every button placed inline (in a Wrap, a
+    // Row, or as an EmptyState action) to fill all available space instead
+    // of sizing to its content. Screens that genuinely want a full-width
+    // button (Login, Save/Create in a sheet) now request that explicitly
+    // via LoadingFilledButton/LoadingOutlinedButton instead of relying on
+    // this default.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size.fromHeight(48),
+        minimumSize: const Size(64, 48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(48),
+        minimumSize: const Size(64, 48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     ),
@@ -80,8 +103,13 @@ ThemeData buildTheme(Brightness brightness) {
       style: TextButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
     ),
 
+    // A small real elevation (was 0, deliberately flat) — the single
+    // biggest lever for making every existing Card in the app (project
+    // rows, team table, review cards, dialogs) read as having actual depth
+    // instead of sitting flush against the background.
     cardTheme: CardThemeData(
-      elevation: 0,
+      elevation: 2,
+      shadowColor: colorScheme.shadow.withValues(alpha: 0.35),
       color: colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       margin: EdgeInsets.zero,
@@ -150,6 +178,29 @@ TextTheme _buildTextTheme(Brightness brightness) {
     labelLarge: base.labelLarge?.copyWith(fontWeight: FontWeight.w600),
   );
 }
+
+// A fixed set of distinct, pre-tuned hues for "this project/person needs its
+// own identity color" spots (icon badges, avatars) — deliberately NOT
+// derived from the seed color, since the whole point is visual variety
+// instead of everything reading as a shade of the same green. Same list
+// works in both themes; each hue already has enough contrast against both
+// light and dark surfaces at this saturation/lightness.
+const _categoryPalette = [
+  Color(0xFF3B82F6), // blue
+  Color(0xFFA855F7), // purple
+  Color(0xFFF97316), // orange
+  Color(0xFF14B8A6), // teal
+  Color(0xFFEC4899), // pink
+  Color(0xFFF59E0B), // amber
+  Color(0xFF6366F1), // indigo
+  Color(0xFF06B6D4), // cyan
+];
+
+/// Deterministic color for [key] (a project id, a person's name/id, ...) —
+/// the same key always maps to the same color everywhere it's used, without
+/// storing a color anywhere. Used for `IconBadge`/`ColoredAvatar` so a given
+/// project or person has one consistent identity color across the app.
+Color colorForKey(String key) => _categoryPalette[key.hashCode.abs() % _categoryPalette.length];
 
 /// Per-role accent color, drawn from the active theme's tonal palette (not
 /// hardcoded hex) so it adapts correctly in both light and dark mode.

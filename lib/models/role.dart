@@ -19,4 +19,7 @@ enum Role {
   bool get canExport => this == Role.owner || this == Role.admin || this == Role.analyst;
   bool get canSeeActivityLog => this == Role.owner || this == Role.admin || this == Role.analyst;
   bool get canManageUsers => this == Role.owner || this == Role.admin;
+  // Same people who can already edit/delete a purchase outright — reviewing
+  // is just the first decision they make on a Member's pending entry.
+  bool get canReviewPurchases => this == Role.owner || this == Role.admin;
 }

@@ -25,10 +25,23 @@ class ProjectsApi {
     return Project.fromJson(json);
   }
 
-  Future<Project> update(String id, String name, String icon) async {
-    final json = await client.patch("/projects/$id", {"name": name, "icon": icon});
+  Future<Project> update(String id, String name, String icon, {double? autoApproveThreshold}) async {
+    final json = await client.patch("/projects/$id", {
+      "name": name,
+      "icon": icon,
+      if (autoApproveThreshold != null) "autoApproveThreshold": autoApproveThreshold,
+    });
     return Project.fromJson(json);
   }
 
   Future<void> delete(String id) => client.delete("/projects/$id");
+
+  // Preview of what changing autoApproveThreshold to [threshold] would do to
+  // this project's currently-pending purchases — shown to the admin before
+  // they commit the change via update(), computed with the exact same rule
+  // the server applies on save (see server/src/routes/projects.ts).
+  Future<(int count, double totalAmount)> autoApproveThresholdPreview(String projectId, double threshold) async {
+    final json = await client.get("/projects/$projectId/auto-approve-preview", query: {"threshold": "$threshold"});
+    return (json["count"] as int, (json["totalAmount"] as num).toDouble());
+  }
 }

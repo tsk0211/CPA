@@ -3,10 +3,13 @@ import { Schema, model } from "mongoose";
 export type AuditAction =
   | "project.create"
   | "project.rename"
+  | "project.auto_approve_threshold_change"
   | "project.delete"
   | "purchase.create"
   | "purchase.edit"
   | "purchase.delete"
+  | "purchase.approve"
+  | "purchase.reject"
   | "user.create"
   | "user.role_change"
   | "user.deactivate";

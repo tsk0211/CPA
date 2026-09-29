@@ -40,4 +40,6 @@ class TeamMember {
         email: json["email"] as String,
         role: Role.parse(json["role"] as String),
       );
+
+  Map<String, dynamic> toJson() => {"_id": id, "name": name, "email": email, "role": role.name};
 }

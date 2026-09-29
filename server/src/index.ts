@@ -9,8 +9,9 @@ import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-import { securityConfig, serverConfig } from "./config/index.js";
+import { appConfig, securityConfig, serverConfig } from "./config/index.js";
 import { connectDb } from "./db.js";
+import { InvalidDateError } from "./dateFilter.js";
 import { auditLogRouter } from "./routes/auditLog.js";
 import { authRouter } from "./routes/auth.js";
 import { projectsRouter } from "./routes/projects.js";
@@ -37,6 +38,10 @@ export function createApp() {
   });
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
+  // Public, unauthenticated, cacheable app-display config — currency code
+  // today, anything else both clients need without hardcoding/guessing from
+  // locale later. See config/app.ts.
+  app.get("/config", (_req, res) => res.json({ currencyCode: appConfig.currencyCode }));
   app.use("/auth/login", loginLimiter);
   app.use("/auth", authRouter);
   app.use("/projects", projectsRouter);
@@ -50,6 +55,7 @@ export function createApp() {
   // a server failure — reported as 400 rather than a generic 500.
   const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
     if (err?.name === "CastError") return void res.status(400).json({ error: "invalid id" });
+    if (err instanceof InvalidDateError) return void res.status(400).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: "internal server error" });
   };
