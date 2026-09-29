@@ -55,8 +55,10 @@ services:
       # Tightened from "*" now that a real web frontend exists (GitHub
       # Pages) — the mobile app isn't subject to CORS at all, so this only
       # ever mattered for browser-based clients. See security review notes.
+      # localhost:3000/3001 included so `next dev` can hit this deployment
+      # directly instead of needing a local server for frontend work.
       - key: CORS_ORIGIN
-        value: "https://tsk0211.github.io"
+        value: "https://tsk0211.github.io,http://localhost:3000,http://localhost:3001"
       - key: LOGIN_RATE_LIMIT_WINDOW_MS
         value: "900000"
       - key: LOGIN_RATE_LIMIT_MAX
