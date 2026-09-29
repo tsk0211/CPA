@@ -19,6 +19,17 @@ const DEFAULT_ROLES: { _id: string; name: string; permissions: typeof DEFAULT_PE
     permissions: { ...DEFAULT_PERMISSIONS, export: true, seeActivityLog: true },
     rank: 20,
   },
+  // Assigned per-project (see models/ProjectMember.ts), not globally like
+  // the two above — a "Project Manager" reviews purchases and can log
+  // their own, but the actual PM-first review pipeline (member -> PM ->
+  // admin) isn't wired up yet; this seeds the role itself so it exists to
+  // assign today, ahead of that. Rank sits well below admin (100).
+  {
+    _id: "project_manager",
+    name: "Project Manager",
+    permissions: { ...DEFAULT_PERMISSIONS, addPurchases: true, reviewPurchases: true },
+    rank: 50,
+  },
 ];
 
 export async function seedDefaultRoles() {

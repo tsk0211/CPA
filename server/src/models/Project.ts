@@ -4,6 +4,12 @@ export interface ProjectDoc {
   _id: string;
   name: string;
   icon: string;
+  description: string;
+  // A target/cap to compare totalSpent against on the detail page —
+  // distinct from autoApproveThreshold below (that's a review-skip cutoff
+  // per purchase, this is the project's own overall number). Null means
+  // "no budget set," not zero.
+  budget: number | null;
   createdBy: string;
   createdAt: Date;
   deletedAt: Date | null;
@@ -18,6 +24,11 @@ export interface ProjectDoc {
 const projectSchema = new Schema<ProjectDoc>({
   name: { type: String, required: true, trim: true },
   icon: { type: String, required: true, default: "📁" },
+  // Not `required: true` — Mongoose's built-in required validator for
+  // String paths fails on an empty string, not just undefined/null, which
+  // is exactly wrong for an optional free-text field defaulting to "".
+  description: { type: String, default: "", trim: true },
+  budget: { type: Number, default: null, min: 0 },
   createdBy: { type: Schema.Types.String, ref: "User", required: true },
   createdAt: { type: Date, required: true, default: () => new Date() },
   deletedAt: { type: Date, default: null },

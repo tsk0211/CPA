@@ -4,14 +4,16 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Search, MoreVertical, Pencil, Trash2, Check, X, Receipt } from "lucide-react";
+import { ArrowLeft, Plus, Search, MoreVertical, Pencil, Trash2, Check, X, Receipt, UserPlus, Users2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ColoredAvatar } from "@/components/colored-avatar";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
 import { useCurrencyFormatter } from "@/lib/currency";
@@ -20,6 +22,8 @@ import { useConfirm } from "@/components/confirm-dialog";
 import { projectsApi } from "@/lib/api/projects";
 import { purchasesApi } from "@/lib/api/purchases";
 import { auditLogApi } from "@/lib/api/auditLog";
+import { usersApi } from "@/lib/api/users";
+import { rolesApi } from "@/lib/api/roles";
 import { colorForKey } from "@/lib/colors";
 import { roleCan } from "@/types";
 import type { Purchase } from "@/types";
@@ -123,17 +127,18 @@ function ProjectDetailContent() {
         Projects
       </Button>
 
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
           <div
-            className="flex h-12 w-12 items-center justify-center rounded-xl text-2xl shadow-sm"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl shadow-sm"
             style={{ backgroundColor: `${colorForKey(project.id)}29` }}
           >
             {project.icon || "📁"}
           </div>
           <div>
             <h1 className="text-2xl font-semibold">{project.name}</h1>
-            <p className="text-sm text-muted-foreground">{currency.format(project.totalSpent)} total spent</p>
+            {project.description && <p className="mt-0.5 max-w-lg text-sm text-muted-foreground">{project.description}</p>}
+            <p className="mt-1 text-xs text-muted-foreground">Created {format(new Date(project.createdAt), "MMM d, yyyy")}</p>
           </div>
         </div>
         {can.canAddPurchases && (
@@ -149,9 +154,46 @@ function ProjectDetailContent() {
         )}
       </div>
 
+      <div className={`mb-6 grid gap-4 ${project.budget != null ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Total spent</p>
+            <p className="mt-1 text-2xl font-bold">{currency.format(project.totalSpent)}</p>
+          </CardContent>
+        </Card>
+        {project.budget != null && (
+          <>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Budget</p>
+                <p className="mt-1 text-2xl font-bold">{currency.format(project.budget)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Remaining</p>
+                <p className={`mt-1 text-2xl font-bold ${project.budget - project.totalSpent < 0 ? "text-destructive" : ""}`}>
+                  {currency.format(project.budget - project.totalSpent)}
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        )}
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Auto-approve under</p>
+            <p className="mt-1 text-2xl font-bold">{currency.format(project.autoApproveThreshold)}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Tabs defaultValue="purchases">
         <TabsList>
           <TabsTrigger value="purchases">Purchases</TabsTrigger>
+          <TabsTrigger value="team">
+            <Users2 className="h-4 w-4" />
+            Team
+          </TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
@@ -241,12 +283,129 @@ function ProjectDetailContent() {
           )}
         </TabsContent>
 
+        <TabsContent value="team" className="mt-4">
+          <ProjectTeamTab projectId={id} canManage={can.canManageProjects} />
+        </TabsContent>
+
         <TabsContent value="activity" className="mt-4">
           <ProjectActivity projectId={id} />
         </TabsContent>
       </Tabs>
 
       <PurchaseDialog open={dialogOpen} onOpenChange={setDialogOpen} projectId={id} existing={editing} onSaved={refreshAll} />
+    </div>
+  );
+}
+
+function ProjectTeamTab({ projectId, canManage }: { projectId: string; canManage: boolean }) {
+  const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+  const [roleId, setRoleId] = useState<string | undefined>(undefined);
+  const [adding, setAdding] = useState(false);
+
+  const membersQuery = useQuery({ queryKey: ["project-members", projectId], queryFn: () => projectsApi.members(projectId) });
+  const usersQuery = useQuery({ queryKey: ["users", "for-team-tab"], queryFn: () => usersApi.list({ page: 1, limit: 100 }), enabled: canManage });
+  const rolesQuery = useQuery({ queryKey: ["roles"], queryFn: () => rolesApi.list(), enabled: canManage });
+
+  const members = membersQuery.data ?? [];
+  const availablePeople = (usersQuery.data?.items ?? []).filter((u) => !members.some((m) => m.userId === u.id));
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["project-members", projectId] });
+  }
+
+  async function addMember() {
+    if (!userId || !roleId) return;
+    setAdding(true);
+    try {
+      await projectsApi.addMember(projectId, userId, roleId);
+      toast.success("Team member added.");
+      setUserId(undefined);
+      setRoleId(undefined);
+      invalidate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function removeMember(memberUserId: string, name: string) {
+    const ok = await confirm({ title: `Remove ${name} from this project?`, confirmLabel: "Remove", tone: "destructive", message: "They'll lose any project-specific role here." });
+    if (!ok) return;
+    try {
+      await projectsApi.removeMember(projectId, memberUserId);
+      toast.success("Removed from project.");
+      invalidate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Something went wrong.");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={userId} onValueChange={(v) => setUserId(v ?? undefined)}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="Person" />
+            </SelectTrigger>
+            <SelectContent>
+              {availablePeople.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={roleId} onValueChange={(v) => setRoleId(v ?? undefined)}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="Role on this project" />
+            </SelectTrigger>
+            <SelectContent>
+              {(rolesQuery.data ?? []).map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" disabled={!userId || !roleId || adding} onClick={addMember}>
+            <UserPlus className="h-4 w-4" />
+            Add
+          </Button>
+        </div>
+      )}
+
+      {membersQuery.isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : members.length === 0 ? (
+        <EmptyState icon={Users2} title="No one assigned yet" subtitle={canManage ? "Add people above to assign them to this project." : undefined} />
+      ) : (
+        <Card className="animate-fade-in-up divide-y p-0">
+          <CardContent className="divide-y p-0">
+            {members.map((m) => (
+              <div key={m.userId} className="flex items-center gap-3 px-4 py-3">
+                <ColoredAvatar name={m.userName} size={32} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{m.userName}</p>
+                  <p className="truncate text-xs text-muted-foreground">{m.roleName}</p>
+                </div>
+                {canManage && (
+                  <Button variant="ghost" size="icon-sm" onClick={() => removeMember(m.userId, m.userName)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

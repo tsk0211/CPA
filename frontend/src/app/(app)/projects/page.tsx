@@ -17,7 +17,8 @@ import { useConfirm } from "@/components/confirm-dialog";
 import { projectsApi } from "@/lib/api/projects";
 import { colorForKey } from "@/lib/colors";
 import { roleCan } from "@/types";
-import { ProjectDialog } from "./project-dialog";
+import { ProjectDialog, type EditableProject } from "./project-dialog";
+import { NewProjectWizard } from "./new-project-wizard";
 
 export default function ProjectsPage() {
   const session = useSession();
@@ -27,8 +28,9 @@ export default function ProjectsPage() {
   const can = roleCan(session.user!.role);
 
   const [search, setSearch] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<{ id: string; name: string; icon: string; autoApproveThreshold: number } | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<EditableProject | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["projects", search],
@@ -69,12 +71,7 @@ export default function ProjectsPage() {
             <Input placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-8 sm:w-56" />
           </div>
           {can.canManageProjects && (
-            <Button
-              onClick={() => {
-                setEditing(null);
-                setDialogOpen(true);
-              }}
-            >
+            <Button onClick={() => setWizardOpen(true)}>
               <Plus className="h-4 w-4" />
               New project
             </Button>
@@ -97,12 +94,7 @@ export default function ProjectsPage() {
           subtitle={can.canManageProjects ? "Create your first project to start tracking purchases." : "Ask an admin to add a project."}
           action={
             can.canManageProjects ? (
-              <Button
-                onClick={() => {
-                  setEditing(null);
-                  setDialogOpen(true);
-                }}
-              >
+              <Button onClick={() => setWizardOpen(true)}>
                 <Plus className="h-4 w-4" />
                 New project
               </Button>
@@ -138,8 +130,15 @@ export default function ProjectsPage() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
                         onClick={() => {
-                          setEditing({ id: project.id, name: project.name, icon: project.icon, autoApproveThreshold: project.autoApproveThreshold });
-                          setDialogOpen(true);
+                          setEditing({
+                            id: project.id,
+                            name: project.name,
+                            icon: project.icon,
+                            description: project.description,
+                            budget: project.budget,
+                            autoApproveThreshold: project.autoApproveThreshold,
+                          });
+                          setEditDialogOpen(true);
                         }}
                       >
                         <Pencil className="h-4 w-4" />
@@ -159,10 +158,18 @@ export default function ProjectsPage() {
       )}
 
       <ProjectDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
         existing={editing}
         onSaved={() => {
+          invalidate();
+          refetch();
+        }}
+      />
+      <NewProjectWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        onCreated={() => {
           invalidate();
           refetch();
         }}

@@ -15,7 +15,9 @@ export type AuditAction =
   | "user.deactivate"
   | "role.create"
   | "role.edit"
-  | "role.delete";
+  | "role.delete"
+  | "project.member_add"
+  | "project.member_remove";
 
 export interface AuditLogDoc {
   _id: string;

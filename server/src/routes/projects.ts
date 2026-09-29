@@ -2,7 +2,10 @@ import { Router } from "express";
 import { logActivity } from "../audit.js";
 import { blockIfMustChangePassword, requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
 import { Project } from "../models/Project.js";
+import { ProjectMember } from "../models/ProjectMember.js";
 import { Purchase } from "../models/Purchase.js";
+import { Role } from "../models/Role.js";
+import { User } from "../models/User.js";
 import { parsePageParams, searchFilter, toPagedResult } from "../pagination.js";
 
 export const projectsRouter = Router();
@@ -55,12 +58,17 @@ projectsRouter.get("/:id", async (req, res) => {
 
 // Only owner/admin can create, rename, or delete projects.
 projectsRouter.post("/", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
-  const { name, icon } = req.body as { name?: string; icon?: string };
+  const { name, icon, description, budget } = req.body as { name?: string; icon?: string; description?: string; budget?: number | null };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+  if (budget !== undefined && budget !== null && (typeof budget !== "number" || budget < 0)) {
+    return res.status(400).json({ error: "budget must be a non-negative number or null" });
+  }
 
   const project = await Project.create({
     name: name.trim(),
     icon: icon?.trim() || "📁",
+    description: description?.trim() || "",
+    budget: budget ?? null,
     createdBy: req.user!.id,
   });
 
@@ -80,10 +88,19 @@ projectsRouter.post("/", requireRole("owner", "admin"), async (req: AuthedReques
 // the same request but gets its own audit entry (a financial-control
 // change, not a cosmetic edit) — see models/AuditLog.ts.
 projectsRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
-  const { name, icon, autoApproveThreshold } = req.body as { name?: string; icon?: string; autoApproveThreshold?: number };
+  const { name, icon, description, budget, autoApproveThreshold } = req.body as {
+    name?: string;
+    icon?: string;
+    description?: string;
+    budget?: number | null;
+    autoApproveThreshold?: number;
+  };
   if (!name?.trim()) return res.status(400).json({ error: "name is required" });
   if (autoApproveThreshold !== undefined && (typeof autoApproveThreshold !== "number" || autoApproveThreshold < 0)) {
     return res.status(400).json({ error: "autoApproveThreshold must be a non-negative number" });
+  }
+  if (budget !== undefined && budget !== null && (typeof budget !== "number" || budget < 0)) {
+    return res.status(400).json({ error: "budget must be a non-negative number or null" });
   }
 
   const project = await Project.findOne({ _id: req.params.id, deletedAt: null });
@@ -95,7 +112,12 @@ projectsRouter.patch("/:id", requireRole("owner", "admin"), async (req: AuthedRe
   const nameOrIconChanged = nextName !== project.name || nextIcon !== project.icon;
   project.name = nextName;
   project.icon = nextIcon;
-  if (nameOrIconChanged) await project.save();
+  // Cosmetic-ish fields, folded into the same save as name/icon — not
+  // separately audited (unlike autoApproveThreshold below, which is a
+  // financial-control change and gets its own entry).
+  if (description !== undefined) project.description = description.trim();
+  if (budget !== undefined) project.budget = budget;
+  if (nameOrIconChanged || description !== undefined || budget !== undefined) await project.save();
 
   if (nameOrIconChanged) {
     await logActivity(req, {
@@ -201,6 +223,95 @@ projectsRouter.delete("/:id", requireRole("owner", "admin"), async (req: AuthedR
     entityType: "project",
     entityId: project._id,
     before: { name: project.name },
+  });
+
+  res.status(204).end();
+});
+
+// --- Project membership: who's assigned to this project, and with what
+// role. Distinct from a user's global role — see models/ProjectMember.ts.
+
+async function memberToJson(member: InstanceType<typeof ProjectMember>) {
+  const [user, role] = await Promise.all([User.findById(member.userId), Role.findById(member.roleId)]);
+  return {
+    userId: member.userId,
+    userName: user?.name ?? "(deactivated)",
+    userEmail: user?.email ?? "",
+    roleId: member.roleId,
+    roleName: role?.name ?? member.roleId,
+    assignedAt: member.assignedAt,
+  };
+}
+
+// Any authenticated active role can read (same visibility as the project itself).
+projectsRouter.get("/:id/members", async (req, res) => {
+  const members = await ProjectMember.find({ projectId: req.params.id, revokedAt: null }).sort({ assignedAt: 1 });
+  res.json(await Promise.all(members.map(memberToJson)));
+});
+
+// Upsert semantics: assigning someone already on the project just changes
+// their role in place instead of erroring, so the "add team" step of the
+// project wizard can call this once per selected person without needing
+// to know who's already been added in a previous pass.
+projectsRouter.post("/:id/members", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
+  const { userId, roleId } = req.body as { userId?: string; roleId?: string };
+  if (!userId || !roleId) return res.status(400).json({ error: "userId and roleId are required" });
+
+  const [project, user, role] = await Promise.all([
+    Project.findOne({ _id: req.params.id, deletedAt: null }),
+    User.findOne({ _id: userId, deletedAt: null }),
+    Role.findOne({ _id: roleId, deletedAt: null }),
+  ]);
+  if (!project) return res.status(404).json({ error: "project not found" });
+  if (!user) return res.status(400).json({ error: "user not found or deactivated" });
+  // roleId must reference an actual Role document — "owner"/"admin" are
+  // global literals, not something you're assigned to a project for.
+  if (!role) return res.status(400).json({ error: "role not found (owner/admin can't be assigned per-project)" });
+
+  const existing = await ProjectMember.findOne({ projectId: project._id, userId, revokedAt: null });
+  if (existing) {
+    existing.roleId = roleId;
+    await existing.save();
+    await logActivity(req, {
+      action: "project.member_add",
+      entityType: "project",
+      entityId: project._id,
+      after: { userName: user.name, roleName: role.name },
+    });
+    return res.json(await memberToJson(existing));
+  }
+
+  const member = await ProjectMember.create({
+    projectId: project._id,
+    userId,
+    roleId,
+    assignedBy: req.user!.id,
+  });
+
+  await logActivity(req, {
+    action: "project.member_add",
+    entityType: "project",
+    entityId: project._id,
+    after: { userName: user.name, roleName: role.name },
+  });
+
+  res.status(201).json(await memberToJson(member));
+});
+
+projectsRouter.delete("/:id/members/:userId", requireRole("owner", "admin"), async (req: AuthedRequest, res) => {
+  const member = await ProjectMember.findOne({ projectId: req.params.id, userId: req.params.userId, revokedAt: null });
+  if (!member) return res.status(404).json({ error: "membership not found" });
+
+  const user = await User.findById(member.userId);
+  member.revokedAt = new Date();
+  member.revokedBy = req.user!.id;
+  await member.save();
+
+  await logActivity(req, {
+    action: "project.member_remove",
+    entityType: "project",
+    entityId: req.params.id,
+    before: { userName: user?.name ?? member.userId },
   });
 
   res.status(204).end();

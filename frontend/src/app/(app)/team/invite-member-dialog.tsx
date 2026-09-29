@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,17 +10,23 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usersApi } from "@/lib/api/users";
-import { roleLabel, type Role } from "@/types";
-
-const ROLES: Role[] = ["owner", "admin", "analyst", "member"];
+import { rolesApi } from "@/lib/api/roles";
+import type { Role } from "@/types";
 
 export function InviteMemberDialog({
   open,
   onOpenChange,
+  canCreateAdmin,
   onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Owner-only — an admin creating a new account can't hand out Admin.
+  // "owner" itself is never an option anywhere: it's not a Role document
+  // (see server/src/models/Role.ts), it's the one account seeded when the
+  // app first boots, and it can never be assigned, transferred, deleted,
+  // or deactivated through any UI or API.
+  canCreateAdmin: boolean;
   onSaved: () => void;
 }) {
   return (
@@ -27,29 +34,37 @@ export function InviteMemberDialog({
       <DialogContent>
         {/* Keyed on open so the form remounts with blank fields every time
             it's reopened, instead of syncing that via an effect. */}
-        <InviteMemberDialogForm key={open ? "open" : "idle"} onOpenChange={onOpenChange} onSaved={onSaved} />
+        <InviteMemberDialogForm key={open ? "open" : "idle"} canCreateAdmin={canCreateAdmin} onOpenChange={onOpenChange} onSaved={onSaved} />
       </DialogContent>
     </Dialog>
   );
 }
 
 function InviteMemberDialogForm({
+  canCreateAdmin,
   onOpenChange,
   onSaved,
 }: {
+  canCreateAdmin: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [tempPassword, setTempPassword] = useState("");
-  const [role, setRole] = useState<Role>("member");
+  const [role, setRole] = useState<Role | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetched live, not a hardcoded list — this is the actual role catalog
+  // an owner can extend (Project Manager, or anything else they define),
+  // so a new custom role shows up here automatically with no code change.
+  const rolesQuery = useQuery({ queryKey: ["roles"], queryFn: () => rolesApi.list() });
+  const roleOptions = [...(rolesQuery.data ?? []).map((r) => ({ id: r.id, name: r.name })), ...(canCreateAdmin ? [{ id: "admin", name: "Admin" }] : [])];
+
   async function submit() {
-    if (!name.trim() || !email.trim() || !tempPassword) {
-      setError("Fill in name, email, and a temporary password.");
+    if (!name.trim() || !email.trim() || !tempPassword || !role) {
+      setError("Fill in name, email, a temporary password, and pick a role.");
       return;
     }
     setSubmitting(true);
@@ -88,16 +103,16 @@ function InviteMemberDialogForm({
         </div>
         <div className="space-y-2">
           <Label>Role</Label>
-          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+          <Select value={role} onValueChange={(v) => setRole(v ?? undefined)}>
             <SelectTrigger className="w-full">
-              {/* SelectValue with no children prints the raw stored value
-                  ("admin"/"analyst"/"member") instead of its label. */}
-              <SelectValue>{(value: Role) => roleLabel[value]}</SelectValue>
+              <SelectValue placeholder={rolesQuery.isLoading ? "Loading roles…" : "Select a role"}>
+                {(value: string) => roleOptions.find((r) => r.id === value)?.name ?? value}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {ROLES.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {roleLabel[r]}
+              {roleOptions.map((r) => (
+                <SelectItem key={r.id} value={r.id}>
+                  {r.name}
                 </SelectItem>
               ))}
             </SelectContent>

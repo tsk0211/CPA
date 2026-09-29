@@ -154,6 +154,29 @@ async function main() {
   assert(project.status === 201, "admin creates a project");
   const projectId = project.body._id;
 
+  // Project description/budget — optional fields, present even when omitted (empty string / null).
+  assert(project.body.description === "" && project.body.budget === null, "a new project defaults to an empty description and no budget");
+
+  const projectWithFields = await req(
+    "/projects",
+    { method: "POST", body: JSON.stringify({ name: "Q4 Office Refit", description: "New furniture and AV setup", budget: 500000 }) },
+    adminToken0,
+  );
+  assert(
+    projectWithFields.status === 201 && projectWithFields.body.description === "New furniture and AV setup" && projectWithFields.body.budget === 500000,
+    "a project can be created with a description and budget",
+  );
+
+  const editedFields = await req(
+    `/projects/${projectId}`,
+    { method: "PATCH", body: JSON.stringify({ name: "Warehouse Fit-out", description: "Updated scope", budget: 100000 }) },
+    adminToken0,
+  );
+  assert(
+    editedFields.status === 200 && editedFields.body.description === "Updated scope" && editedFields.body.budget === 100000,
+    "a project's description and budget can be edited",
+  );
+
   // A malformed id must fail cleanly (400), not crash the process — a
   // Mongoose CastError thrown inside an async handler is an unhandled
   // rejection unless caught, and previously took the whole server down.
@@ -558,6 +581,55 @@ async function main() {
     ownerToken,
   );
   assert(createUserWithDeletedRole.status === 400, "a deleted role can no longer be assigned to a new user");
+
+  // --- Project membership (who's assigned to a project, and with what role) ---
+
+  const memberUserIdForProject = createMember.body.id;
+  const memberOnly403 = await req(
+    `/projects/${projectId}/members`,
+    { method: "POST", body: JSON.stringify({ userId: memberUserIdForProject, roleId: "project_manager" }) },
+    memberToken0,
+  );
+  assert(memberOnly403.status === 403, "member cannot assign project members");
+
+  const addPm = await req(
+    `/projects/${projectId}/members`,
+    { method: "POST", body: JSON.stringify({ userId: memberUserIdForProject, roleId: "project_manager" }) },
+    adminToken0,
+  );
+  assert(
+    addPm.status === 201 && addPm.body.roleId === "project_manager" && addPm.body.roleName === "Project Manager",
+    "admin assigns a member as Project Manager on a project (built-in default role)",
+  );
+
+  const rejectOwnerAsMemberRole = await req(
+    `/projects/${projectId}/members`,
+    { method: "POST", body: JSON.stringify({ userId: memberUserIdForProject, roleId: "owner" }) },
+    adminToken0,
+  );
+  assert(rejectOwnerAsMemberRole.status === 400, "owner/admin can't be used as a project-member role (not real Role documents)");
+
+  const listMembers = await req(`/projects/${projectId}/members`, {}, adminToken0);
+  assert(
+    listMembers.status === 200 && listMembers.body.length === 1 && listMembers.body[0].userId === memberUserIdForProject,
+    "project member list reflects the assignment",
+  );
+
+  const reassignSameMember = await req(
+    `/projects/${projectId}/members`,
+    { method: "POST", body: JSON.stringify({ userId: memberUserIdForProject, roleId: "analyst" }) },
+    adminToken0,
+  );
+  assert(reassignSameMember.status === 200 && reassignSameMember.body.roleId === "analyst", "re-assigning an existing member updates their role in place, not a duplicate");
+
+  const listAfterReassign = await req(`/projects/${projectId}/members`, {}, adminToken0);
+  assert(listAfterReassign.body.length === 1, "still exactly one active membership after an in-place role change");
+
+  const removeMember = await req(`/projects/${projectId}/members/${memberUserIdForProject}`, { method: "DELETE" }, adminToken0);
+  assert(removeMember.status === 204, "admin removes a project member");
+
+  const listAfterRemove = await req(`/projects/${projectId}/members`, {}, adminToken0);
+  assert(listAfterRemove.status === 200 && listAfterRemove.body.length === 0, "removed member no longer appears in the active list");
 
   // A fresh member login, to test that deactivation revokes refresh tokens too (separate from the reuse-detection test above, which already burned the first one).
   const memberLogin2 = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "mo@cpa.test", password: "mo-real-pw" }) });

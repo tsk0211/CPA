@@ -23,6 +23,7 @@ import { useSession } from "@/lib/session";
 import { useConfirm } from "@/components/confirm-dialog";
 import { usersApi } from "@/lib/api/users";
 import { auditLogApi } from "@/lib/api/auditLog";
+import { rolesApi } from "@/lib/api/roles";
 import { projectsApi } from "@/lib/api/projects";
 import { roleCan, roleLabel, type TeamMember } from "@/types";
 import { InviteMemberDialog } from "./invite-member-dialog";
@@ -67,8 +68,10 @@ export default function TeamPage() {
 }
 
 function MembersTab() {
+  const session = useSession();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
+  const isOwner = session.user!.role === "owner";
 
   const [search, setSearch] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -78,6 +81,16 @@ function MembersTab() {
     queryKey: ["users", search],
     queryFn: () => usersApi.list({ page: 1, limit: 100, search }),
   });
+  // "owner"/"admin" aren't Role documents, so they're merged in on top of
+  // whatever's actually fetched — this is what lets a member's row show
+  // "Project Manager" (or any other custom role) by name instead of its
+  // raw id, without hardcoding the label anywhere.
+  const rolesQuery = useQuery({ queryKey: ["roles"], queryFn: () => rolesApi.list() });
+  const roleNameById: Record<string, string> = {
+    owner: "Owner",
+    admin: "Admin",
+    ...Object.fromEntries((rolesQuery.data ?? []).map((r) => [r.id, r.name])),
+  };
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["users"] });
@@ -148,23 +161,30 @@ function MembersTab() {
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{member.email}</TableCell>
-                  <TableCell className="text-muted-foreground">{roleLabel[member.role]}</TableCell>
+                  <TableCell className="text-muted-foreground">{roleNameById[member.role] ?? member.role}</TableCell>
                   <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
-                        <MoreVertical className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setRoleTarget(member)}>
-                          <ShieldCheck className="h-4 w-4" />
-                          Change role
-                        </DropdownMenuItem>
-                        <DropdownMenuItem variant="destructive" onClick={() => handleDeactivate(member)}>
-                          <UserX className="h-4 w-4" />
-                          Deactivate
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {/* The owner isn't a Role document and can't be
+                        deleted, deactivated, or reassigned through any
+                        UI or API — no menu at all for that row, not just
+                        disabled actions. Also hidden for your own row
+                        (self-deactivation is blocked server-side too). */}
+                    {member.role !== "owner" && member.id !== session.user!.id && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" />}>
+                          <MoreVertical className="h-4 w-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setRoleTarget(member)}>
+                            <ShieldCheck className="h-4 w-4" />
+                            Change role
+                          </DropdownMenuItem>
+                          <DropdownMenuItem variant="destructive" onClick={() => handleDeactivate(member)}>
+                            <UserX className="h-4 w-4" />
+                            Deactivate
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -176,6 +196,7 @@ function MembersTab() {
       <InviteMemberDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
+        canCreateAdmin={isOwner}
         onSaved={() => {
           invalidate();
           refetch();
@@ -185,6 +206,7 @@ function MembersTab() {
         open={roleTarget !== null}
         onOpenChange={(open) => !open && setRoleTarget(null)}
         member={roleTarget}
+        canAssignAdmin={isOwner}
         onSaved={() => {
           invalidate();
           refetch();
