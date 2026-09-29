@@ -12,15 +12,26 @@ auditLogRouter.use(requireAuth, blockIfMustChangePassword, requireRole("owner", 
 
 // Shared by the list and export endpoints so filtering never drifts between
 // what you see on screen and what you get in the export.
-// - actorId filters by person (the UI shows a name, but filters by id —
-//   names aren't unique and can be reused after a deactivated account).
+// - actorId filters by one person; actorIds (comma-separated, same
+//   convention as purchases' projectIds) filters by a group at once — a
+//   task split across several people, or "what did this project's team do
+//   this week." The UI shows names, but both filter by id — names aren't
+//   unique and can be reused after a deactivated account.
 // - projectId scopes to one project's own project.* entries plus every
 //   purchase.* entry for a purchase that ever belonged to it, including
 //   purchases since edited or soft-deleted.
 async function buildAuditFilter(query: Record<string, unknown>): Promise<Record<string, unknown>> {
   const filter: Record<string, unknown> = {};
-  if (typeof query.action === "string" && query.action) filter.action = query.action;
-  if (typeof query.actorId === "string" && query.actorId) filter.actorId = query.actorId;
+  if (typeof query.actions === "string" && query.actions) {
+    filter.action = { $in: query.actions.split(",") };
+  } else if (typeof query.action === "string" && query.action) {
+    filter.action = query.action;
+  }
+  if (typeof query.actorIds === "string" && query.actorIds) {
+    filter.actorId = { $in: query.actorIds.split(",") };
+  } else if (typeof query.actorId === "string" && query.actorId) {
+    filter.actorId = query.actorId;
+  }
 
   const dateFilter = buildDateFilter(query.from, query.to);
   if (Object.keys(dateFilter).length) filter.createdAt = dateFilter;
@@ -37,7 +48,7 @@ async function buildAuditFilter(query: Record<string, unknown>): Promise<Record<
   return filter;
 }
 
-// ?projectId=, ?actorId=, ?action=, ?from=, ?to= (all optional, combinable).
+// ?projectId=, ?actorId=, ?actorIds=id1,id2, ?action=, ?actions=a1,a2, ?from=, ?to= (all optional, combinable).
 auditLogRouter.get("/", async (req, res) => {
   const pageParams = parsePageParams(req);
   const filter = await buildAuditFilter(req.query);
@@ -47,7 +58,7 @@ auditLogRouter.get("/", async (req, res) => {
   res.json(toPagedResult(logs, total, pageParams));
 });
 
-// GET /audit-log/export?projectId=&actorId=&action=&from=ISO&to=ISO
+// GET /audit-log/export?projectId=&actorId=&actorIds=id1,id2&action=&actions=a1,a2&from=ISO&to=ISO
 // Same filters as the list endpoint, no pagination — the whole matching set
 // as one .xlsx sheet.
 auditLogRouter.get("/export", async (req, res) => {

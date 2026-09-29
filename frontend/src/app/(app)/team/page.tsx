@@ -4,11 +4,15 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Plus, Search, MoreVertical, ShieldCheck, UserX, Download, Users2, History } from "lucide-react";
+import type { DateRange } from "react-day-picker";
+import { Plus, Search, MoreVertical, ShieldCheck, UserX, Download, Users2, History, CalendarIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -194,14 +198,41 @@ const ALL_PROJECTS = "__all__";
 
 function ActivityTab({ canExport }: { canExport: boolean }) {
   const [projectId, setProjectId] = useState<string>(ALL_PROJECTS);
+  // A task is often split across several people — actorIds filters by all
+  // of them at once, so an admin can pull "what did this group do" in one
+  // screen instead of checking each person separately.
+  const [actorIds, setActorIds] = useState<string[]>([]);
+  const [range, setRange] = useState<DateRange | undefined>(undefined);
   const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(1);
 
   const projectsQuery = useQuery({ queryKey: ["projects", "for-filter"], queryFn: () => projectsApi.list({ page: 1, limit: 100 }) });
-  const filters = { page: 1, limit: 100, projectId: projectId === ALL_PROJECTS ? undefined : projectId };
+  const usersQuery = useQuery({ queryKey: ["users", "for-filter"], queryFn: () => usersApi.list({ page: 1, limit: 100 }) });
+  const people = usersQuery.data?.items ?? [];
+
+  const filters = {
+    page,
+    limit: 20,
+    projectId: projectId === ALL_PROJECTS ? undefined : projectId,
+    actorIds,
+    from: range?.from,
+    to: range?.to,
+  };
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["audit", "all", projectId],
+    queryKey: ["audit", "all", projectId, actorIds, range?.from?.toISOString(), range?.to?.toISOString(), page],
     queryFn: () => auditLogApi.list(filters),
   });
+
+  function togglePerson(id: string) {
+    setActorIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
+    setPage(1);
+  }
+
+  const rangeLabel = range?.from
+    ? range.to
+      ? `${format(range.from, "MMM d")} – ${format(range.to, "MMM d, yyyy")}`
+      : format(range.from, "MMM d, yyyy")
+    : "Date range";
 
   async function handleExport() {
     setExporting(true);
@@ -223,29 +254,103 @@ function ActivityTab({ canExport }: { canExport: boolean }) {
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Select value={projectId} onValueChange={(v) => setProjectId(v ?? ALL_PROJECTS)}>
-          <SelectTrigger className="w-56">
-            {/* SelectValue with no children just prints the raw stored
-                value (a project id) — it has no way to know the label
-                unless told, so this maps it back to "icon + name". */}
-            <SelectValue>
-              {(value: string) => {
-                if (value === ALL_PROJECTS) return "All projects";
-                const project = projectsQuery.data?.items.find((p) => p.id === value);
-                return project ? `${project.icon} ${project.name}` : value;
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
-            {projectsQuery.data?.items.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.icon} {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={projectId}
+            onValueChange={(v) => {
+              setProjectId(v ?? ALL_PROJECTS);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-52">
+              {/* SelectValue with no children just prints the raw stored
+                  value (a project id) — it has no way to know the label
+                  unless told, so this maps it back to "icon + name". */}
+              <SelectValue>
+                {(value: string) => {
+                  if (value === ALL_PROJECTS) return "All projects";
+                  const project = projectsQuery.data?.items.find((p) => p.id === value);
+                  return project ? `${project.icon} ${project.name}` : value;
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+              {projectsQuery.data?.items.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.icon} {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+              People{actorIds.length > 0 ? ` (${actorIds.length})` : ""}
+            </PopoverTrigger>
+            <PopoverContent className="w-64">
+              {people.length === 0 ? (
+                <p className="p-2 text-sm text-muted-foreground">No team members yet.</p>
+              ) : (
+                <div className="max-h-64 space-y-1 overflow-y-auto">
+                  {people.map((p) => (
+                    <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-sm hover:bg-muted">
+                      <Checkbox checked={actorIds.includes(p.id)} onCheckedChange={() => togglePerson(p.id)} />
+                      <span className="truncate">{p.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {actorIds.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setActorIds([]);
+                    setPage(1);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                  Clear people
+                </Button>
+              )}
+            </PopoverContent>
+          </Popover>
+
+          <Popover>
+            <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+              <CalendarIcon className="h-4 w-4" />
+              {rangeLabel}
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-2">
+              <Calendar
+                mode="range"
+                selected={range}
+                onSelect={(r) => {
+                  setRange(r);
+                  setPage(1);
+                }}
+                numberOfMonths={1}
+              />
+              {range && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setRange(undefined);
+                    setPage(1);
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                  Clear range
+                </Button>
+              )}
+            </PopoverContent>
+          </Popover>
+        </div>
         {canExport && (
           <Button variant="outline" onClick={handleExport} disabled={exporting}>
             <Download className="h-4 w-4" />
@@ -282,6 +387,17 @@ function ActivityTab({ canExport }: { canExport: boolean }) {
             ))}
           </CardContent>
         </Card>
+      )}
+
+      {data && (data.hasMore || page > 1) && !isLoading && data.items.length > 0 && (
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            Previous
+          </Button>
+          <Button variant="outline" size="sm" disabled={!data.hasMore} onClick={() => setPage((p) => p + 1)}>
+            Next
+          </Button>
+        </div>
       )}
     </>
   );

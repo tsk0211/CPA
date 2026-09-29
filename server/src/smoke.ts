@@ -404,10 +404,28 @@ async function main() {
     "audit log filters by actorId (person)",
   );
 
+  const ownerMeRes = await req("/auth/me", {}, ownerToken);
+  const ownerId = ownerMeRes.body.id;
+  const byActors = await req(`/audit-log?actorIds=${adminId},${ownerId}`, {}, adminToken0);
+  assert(
+    byActors.status === 200 &&
+      byActors.body.items.length > 0 &&
+      (byActors.body.items as { actorId: string }[]).every((a) => a.actorId === adminId || a.actorId === ownerId),
+    "audit log filters by actorIds (group of people)",
+  );
+
   const byAction = await req("/audit-log?action=purchase.approve", {}, adminToken0);
   assert(
     byAction.status === 200 && (byAction.body.items as { action: string }[]).every((a) => a.action === "purchase.approve"),
     "audit log filters by action",
+  );
+
+  const byActions = await req("/audit-log?actions=purchase.approve,purchase.reject", {}, adminToken0);
+  assert(
+    byActions.status === 200 &&
+      byActions.body.items.length > 0 &&
+      (byActions.body.items as { action: string }[]).every((a) => a.action === "purchase.approve" || a.action === "purchase.reject"),
+    "audit log filters by actions (approve OR reject, for a 'my recent decisions' view)",
   );
 
   const farFuture = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
