@@ -226,7 +226,16 @@ function ActivityTab({ canExport }: { canExport: boolean }) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Select value={projectId} onValueChange={(v) => setProjectId(v ?? ALL_PROJECTS)}>
           <SelectTrigger className="w-56">
-            <SelectValue />
+            {/* SelectValue with no children just prints the raw stored
+                value (a project id) — it has no way to know the label
+                unless told, so this maps it back to "icon + name". */}
+            <SelectValue>
+              {(value: string) => {
+                if (value === ALL_PROJECTS) return "All projects";
+                const project = projectsQuery.data?.items.find((p) => p.id === value);
+                return project ? `${project.icon} ${project.name}` : value;
+              }}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>

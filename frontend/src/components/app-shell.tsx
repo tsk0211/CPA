@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, FolderKanban, ClipboardCheck, BarChart3, Users, UserCircle } from "lucide-react";
@@ -51,7 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       <aside className="flex w-56 flex-col border-r bg-muted/20 px-3 py-4">
         <div className="mb-6 flex items-center gap-2 px-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary font-bold shadow-sm">C</div>
+          <Image src="/logo.png" alt="" width={32} height={32} className="rounded-lg shadow-sm" priority />
           <span className="font-semibold">CPA</span>
         </div>
         <nav className="flex flex-1 flex-col gap-1">

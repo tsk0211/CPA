@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Receipt } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -69,9 +70,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center text-center gap-3">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15">
-            <Receipt className="h-8 w-8 text-primary" />
-          </div>
+          <Image src="/logo.png" alt="" width={72} height={72} priority />
           <div>
             <h1 className="text-3xl font-bold tracking-tight">CPA</h1>
             <p className="text-muted-foreground text-sm">Cash Purchase Accounting</p>

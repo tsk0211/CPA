@@ -76,7 +76,9 @@ function ChangeRoleDialogForm({
           <Label>Role</Label>
           <Select value={role} onValueChange={(v) => setRole(v as Role)}>
             <SelectTrigger className="w-full">
-              <SelectValue />
+              {/* SelectValue with no children prints the raw stored value
+                  ("admin"/"analyst"/"member") instead of its label. */}
+              <SelectValue>{(value: Role) => roleLabel[value]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {ROLES.map((r) => (

@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { CalendarIcon, Download, Loader2, FileSpreadsheet, FileText, X } from "lucide-react";
+import { CalendarIcon, Download, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +20,7 @@ import { useCurrencyFormatter } from "@/lib/currency";
 import { projectsApi } from "@/lib/api/projects";
 import { purchasesApi } from "@/lib/api/purchases";
 import { colorForKey } from "@/lib/colors";
+import { ExportWizard } from "./export-wizard";
 
 const chartConfig = { total: { label: "Spend", color: "var(--primary)" } } satisfies ChartConfig;
 
@@ -35,9 +35,8 @@ export default function ReportsPage() {
 
   const [range, setRange] = useState<DateRange | undefined>({ from: startOfMonth(), to: new Date() });
   const [projectIds, setProjectIds] = useState<string[]>([]);
-  const [includeAuditTrail, setIncludeAuditTrail] = useState(false);
-  const [exporting, setExporting] = useState<"csv" | "xlsx" | null>(null);
   const [limit, setLimit] = useState(20);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const projectsQuery = useQuery({ queryKey: ["projects", "all"], queryFn: () => projectsApi.list({ page: 1, limit: 100 }) });
   const projects = projectsQuery.data?.items ?? [];
@@ -60,32 +59,6 @@ export default function ReportsPage() {
 
   function refreshAll() {
     queryClient.invalidateQueries({ queryKey: ["reports"] });
-  }
-
-  async function handleExport(exportFormat: "csv" | "xlsx") {
-    setExporting(exportFormat);
-    try {
-      const { blob, filename } = await purchasesApi.export({
-        format: exportFormat,
-        projectIds: projectIds.length ? projectIds : undefined,
-        from: range?.from,
-        to: range?.to,
-        includeAuditTrail,
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success("Export downloaded.");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong.");
-    } finally {
-      setExporting(null);
-    }
   }
 
   const items = searchQuery.data?.items ?? [];
@@ -156,22 +129,12 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="flex flex-col gap-2 pt-6">
+          <CardContent className="flex flex-col justify-center gap-2 pt-6">
             <p className="text-sm text-muted-foreground">Export</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="outline" disabled={exporting !== null} onClick={() => handleExport("csv")}>
-                {exporting === "csv" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                CSV
-              </Button>
-              <Button size="sm" variant="outline" disabled={exporting !== null} onClick={() => handleExport("xlsx")}>
-                {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                XLSX
-              </Button>
-            </div>
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Checkbox checked={includeAuditTrail} onCheckedChange={(v) => setIncludeAuditTrail(v === true)} />
-              Include audit trail
-            </label>
+            <Button onClick={() => setWizardOpen(true)}>
+              <Download className="h-4 w-4" />
+              Export…
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -259,6 +222,14 @@ export default function ReportsPage() {
           )}
         </>
       )}
+
+      <ExportWizard
+        open={wizardOpen}
+        onOpenChange={setWizardOpen}
+        projects={projects}
+        initialRange={range}
+        initialProjectIds={projectIds}
+      />
     </div>
   );
 }
