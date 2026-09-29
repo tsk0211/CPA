@@ -145,6 +145,28 @@ async function send(method: string, path: string, body?: unknown, query?: Record
   return res;
 }
 
+// Most list/read endpoints (projects, purchases, users, audit log) return
+// raw Mongoose documents with a Mongo-style `_id`, not `id` — a few
+// individual routes (e.g. POST /users, the roles endpoints) explicitly
+// remap to `id` themselves, but most don't. The Dart client handles this
+// per-model, in each fromJson() (see lib/models/project.dart etc.); this
+// does the equivalent for every response in one place instead of requiring
+// every lib/api/*.ts file to remember to do it — every type in @/types
+// declares `id`, so every caller needs it to actually be there. Purely
+// additive (adds `id` alongside the existing `_id`), so it's a no-op for
+// anything that doesn't have one.
+function aliasMongoIds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(aliasMongoIds);
+  if (value && typeof value === "object") {
+    const input = value as Record<string, unknown>;
+    const output: Record<string, unknown> = {};
+    for (const key of Object.keys(input)) output[key] = aliasMongoIds(input[key]);
+    if (typeof input._id === "string" && output.id === undefined) output.id = input._id;
+    return output;
+  }
+  return value;
+}
+
 // decode()'s actual return shape depends entirely on which endpoint was
 // called; every api.get/post/patch call site immediately casts its result
 // to a specific type (see lib/api/projects.ts etc.), so this is a
@@ -152,7 +174,7 @@ async function send(method: string, path: string, body?: unknown, query?: Record
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function decode(res: Response): Promise<any> {
   const text = await res.text();
-  return text.length ? JSON.parse(text) : {};
+  return text.length ? aliasMongoIds(JSON.parse(text)) : {};
 }
 
 export const api = {
