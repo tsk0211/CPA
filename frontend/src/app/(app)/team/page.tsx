@@ -103,9 +103,9 @@ function MembersTab() {
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search members…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-56 pl-8" />
+          <Input placeholder="Search members…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-8 sm:w-56" />
         </div>
         <Button onClick={() => setInviteOpen(true)}>
           <Plus className="h-4 w-4" />

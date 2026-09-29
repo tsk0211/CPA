@@ -63,10 +63,10 @@ export default function ProjectsPage() {
     <div className="mx-auto max-w-[1200px] p-6 md:p-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Projects</h1>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-56 pl-8" />
+            <Input placeholder="Search projects…" value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-8 sm:w-56" />
           </div>
           {can.canManageProjects && (
             <Button
