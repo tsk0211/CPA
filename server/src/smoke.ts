@@ -1,6 +1,7 @@
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { connectDb } from "./db.js";
 import { createApp } from "./index.js";
+import { seedDefaultRoles } from "./seedDefaultRoles.js";
 import { seedOwner } from "./seedOwner.js";
 
 process.env.JWT_SECRET = "test-secret-at-least-32-characters-long";
@@ -22,6 +23,7 @@ async function main() {
   const mongod = await MongoMemoryServer.create();
   await connectDb(mongod.getUri());
   await seedOwner();
+  await seedDefaultRoles();
 
   const app = createApp();
   const server = app.listen(0);
@@ -469,6 +471,75 @@ async function main() {
     searchedUsers.status === 200 && searchedUsers.body.items.every((u: { name: string }) => u.name.includes("Admin")),
     "user search filters by name",
   );
+
+  // --- Dynamic roles (Role collection) ---
+
+  const memberTryListRoles = await req("/roles", {}, memberToken0);
+  assert(memberTryListRoles.status === 403, "member cannot list roles");
+
+  const adminTryCreateRole = await req(
+    "/roles",
+    { method: "POST", body: JSON.stringify({ name: "Auditor", permissions: { export: true }, rank: 50 }) },
+    adminToken0,
+  );
+  assert(adminTryCreateRole.status === 403, "admin (non-owner) is blocked from creating a role");
+
+  // manageUsers/manageRoles aren't real keys on RolePermissions at all — a
+  // request body claiming them is silently ignored, not rejected, since
+  // there's no schema field for them to land on.
+  const createRole = await req(
+    "/roles",
+    {
+      method: "POST",
+      body: JSON.stringify({ name: "Auditor", permissions: { export: true, seeActivityLog: true, manageUsers: true }, rank: 500 }),
+    },
+    ownerToken,
+  );
+  assert(
+    createRole.status === 201 &&
+      createRole.body.rank === 99 && // clamped down from 500 to MAX_CUSTOM_ROLE_RANK
+      createRole.body.permissions.export === true &&
+      createRole.body.permissions.seeActivityLog === true &&
+      createRole.body.permissions.manageUsers === undefined,
+    "owner creates a custom role; rank is clamped below admin and manageUsers can't be smuggled in",
+  );
+  const auditorRoleId = createRole.body.id;
+
+  const listRoles = await req("/roles", {}, ownerToken);
+  assert(
+    listRoles.status === 200 &&
+      listRoles.body.some((r: { id: string }) => r.id === "member") &&
+      listRoles.body.some((r: { id: string }) => r.id === "analyst") &&
+      listRoles.body.some((r: { id: string }) => r.id === auditorRoleId),
+    "role list includes the seeded defaults and the new custom role",
+  );
+
+  const createAuditorUser = await req(
+    "/users",
+    { method: "POST", body: JSON.stringify({ name: "Ray Auditor", email: "ray@cpa.test", tempPassword: "temp-pw-123", role: auditorRoleId }) },
+    ownerToken,
+  );
+  assert(createAuditorUser.status === 201 && createAuditorUser.body.role === auditorRoleId, "owner creates a user with a custom role");
+
+  const deleteInUseRole = await req(`/roles/${auditorRoleId}`, { method: "DELETE" }, ownerToken);
+  assert(deleteInUseRole.status === 409, "deleting a role still assigned to a user is blocked");
+
+  const reassignAuditor = await req(
+    `/users/${createAuditorUser.body.id}/role`,
+    { method: "PATCH", body: JSON.stringify({ role: "analyst" }) },
+    ownerToken,
+  );
+  assert(reassignAuditor.status === 200 && reassignAuditor.body.role === "analyst", "user is reassigned off the custom role");
+
+  const deleteNowUnusedRole = await req(`/roles/${auditorRoleId}`, { method: "DELETE" }, ownerToken);
+  assert(deleteNowUnusedRole.status === 204, "deleting the now-unused custom role succeeds");
+
+  const createUserWithDeletedRole = await req(
+    "/users",
+    { method: "POST", body: JSON.stringify({ name: "Late Auditor", email: "late@cpa.test", tempPassword: "temp-pw-123", role: auditorRoleId }) },
+    ownerToken,
+  );
+  assert(createUserWithDeletedRole.status === 400, "a deleted role can no longer be assigned to a new user");
 
   // A fresh member login, to test that deactivation revokes refresh tokens too (separate from the reuse-detection test above, which already burned the first one).
   const memberLogin2 = await req("/auth/login", { method: "POST", body: JSON.stringify({ email: "mo@cpa.test", password: "mo-real-pw" }) });

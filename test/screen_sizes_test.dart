@@ -118,7 +118,12 @@ void main() {
 
     const connectivityChannel = MethodChannel('dev.fluttercommunity.plus/connectivity');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(connectivityChannel, (call) async {
-      if (call.method == 'check') return 'wifi';
+      // connectivity_plus 6.x's checkConnectivity() calls invokeListMethod,
+      // which expects a List result, not the single-string wire format
+      // older versions used — ConnectivityStatus.load() (state/
+      // connectivity_status.dart) is the first caller in this app to
+      // actually invoke 'check', which is what first exposed this.
+      if (call.method == 'check') return <String>['wifi'];
       return null;
     });
     const connectivityEventChannel = MethodChannel('dev.fluttercommunity.plus/connectivity_status');

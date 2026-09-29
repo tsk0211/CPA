@@ -16,7 +16,9 @@ import { auditLogRouter } from "./routes/auditLog.js";
 import { authRouter } from "./routes/auth.js";
 import { projectsRouter } from "./routes/projects.js";
 import { purchasesRouter } from "./routes/purchases.js";
+import { rolesRouter } from "./routes/roles.js";
 import { usersRouter } from "./routes/users.js";
+import { seedDefaultRoles } from "./seedDefaultRoles.js";
 import { seedOwner } from "./seedOwner.js";
 
 export function createApp() {
@@ -47,6 +49,7 @@ export function createApp() {
   app.use("/projects", projectsRouter);
   app.use("/purchases", purchasesRouter);
   app.use("/users", usersRouter);
+  app.use("/roles", rolesRouter);
   app.use("/audit-log", auditLogRouter);
 
   // Last resort: turns a thrown/rejected error from any route into a JSON
@@ -67,6 +70,7 @@ export function createApp() {
 async function main() {
   await connectDb(serverConfig.mongoUri);
   await seedOwner();
+  await seedDefaultRoles();
 
   const app = createApp();
   app.listen(serverConfig.port, () => console.log(`CPA server listening on http://localhost:${serverConfig.port}`));

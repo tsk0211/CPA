@@ -12,7 +12,10 @@ export type AuditAction =
   | "purchase.reject"
   | "user.create"
   | "user.role_change"
-  | "user.deactivate";
+  | "user.deactivate"
+  | "role.create"
+  | "role.edit"
+  | "role.delete";
 
 export interface AuditLogDoc {
   _id: string;
@@ -20,7 +23,7 @@ export interface AuditLogDoc {
   actorName: string;
   actorRole: string;
   action: AuditAction;
-  entityType: "project" | "purchase" | "user";
+  entityType: "project" | "purchase" | "user" | "role";
   entityId: string;
   before: unknown;
   after: unknown;

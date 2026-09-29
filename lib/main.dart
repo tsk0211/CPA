@@ -13,6 +13,7 @@ import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/public/public_site_shell.dart';
 import 'state/app_scope.dart';
+import 'state/connectivity_status.dart';
 import 'state/local_cache.dart';
 import 'state/session.dart';
 import 'theme.dart';
@@ -42,6 +43,7 @@ class _CpaAppState extends State<CpaApp> {
   late final UsersApi _users;
   late final AuditApi _auditLog;
   late final OfflineQueue _offlineQueue;
+  late final ConnectivityStatus _connectivity;
 
   @override
   void initState() {
@@ -54,8 +56,10 @@ class _CpaAppState extends State<CpaApp> {
     _users = UsersApi(_client);
     _auditLog = AuditApi(_client);
     _offlineQueue = OfflineQueue();
+    _connectivity = ConnectivityStatus();
 
     _bootstrap();
+    _connectivity.listen();
     // Whenever connectivity comes back, try to flush anything queued
     // offline. A failed sync just leaves items queued for next time.
     Connectivity().onConnectivityChanged.listen((results) {
@@ -66,6 +70,7 @@ class _CpaAppState extends State<CpaApp> {
   }
 
   Future<void> _bootstrap() async {
+    await _connectivity.load();
     await _offlineQueue.load();
     await _session.bootstrap();
     if (_offlineQueue.hasPending) _offlineQueue.sync(_purchases);
@@ -82,6 +87,7 @@ class _CpaAppState extends State<CpaApp> {
       auditLog: _auditLog,
       offlineQueue: _offlineQueue,
       cache: _cache,
+      connectivity: _connectivity,
       child: MaterialApp(
         title: "CPA",
         debugShowCheckedModeBanner: false,

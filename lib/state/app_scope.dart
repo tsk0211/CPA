@@ -6,6 +6,7 @@ import '../api/projects_api.dart';
 import '../api/purchases_api.dart';
 import '../api/users_api.dart';
 import '../offline/offline_queue.dart';
+import 'connectivity_status.dart';
 import 'local_cache.dart';
 import 'session.dart';
 
@@ -22,6 +23,7 @@ class AppScope extends InheritedWidget {
   final AuditApi auditLog;
   final OfflineQueue offlineQueue;
   final LocalCache cache;
+  final ConnectivityStatus connectivity;
 
   const AppScope({
     super.key,
@@ -33,6 +35,7 @@ class AppScope extends InheritedWidget {
     required this.auditLog,
     required this.offlineQueue,
     required this.cache,
+    required this.connectivity,
     required super.child,
   });
 

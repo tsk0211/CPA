@@ -10,6 +10,7 @@ import '../models/project.dart';
 import '../models/role.dart';
 import '../models/user.dart';
 import '../state/app_scope.dart';
+import 'user_activity_screen.dart';
 import '../widgets/add_user_sheet.dart';
 import '../widgets/audit_entry_tile.dart';
 import '../widgets/breakpoints.dart';
@@ -20,6 +21,7 @@ import '../widgets/common/empty_state.dart';
 import '../widgets/common/error_text.dart';
 import '../widgets/common/form_error_text.dart';
 import '../widgets/common/loading_indicator.dart';
+import '../widgets/common/online_gate.dart';
 import '../widgets/common/skeleton.dart';
 import '../utils/date_range.dart';
 import '../widgets/responsive_center.dart';
@@ -146,32 +148,24 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // Deliberately no cache-first paint here (unlike projects_screen.dart) —
+  // this is account/role data an Owner is making access decisions from, so
+  // showing a stale list would be actively misleading rather than a
+  // harmless placeholder. OnlineGate in build() below keeps this whole tab
+  // off-screen entirely while offline rather than attempting a request that
+  // would just fail.
   Future<void> _load(String search) async {
     final scope = AppScope.of(context);
-    final isInitialUnfilteredLoad = search.isEmpty && _items.isEmpty;
 
     setState(() {
       _loading = true;
       _error = null;
     });
 
-    // Same reasoning as projects_screen.dart's initial load: paint last
-    // session's cached team list instantly rather than a skeleton, only for
-    // the very first unfiltered load.
-    if (isInitialUnfilteredLoad) {
-      final cached = await scope.cache.loadTeam();
-      if (cached.isNotEmpty && mounted && _items.isEmpty) {
-        setState(() => _items = cached);
-      }
-    }
-
     try {
       final result = await scope.users.list(search: search);
       if (!mounted) return;
       setState(() => _items = result.items);
-      if (isInitialUnfilteredLoad) {
-        unawaited(scope.cache.saveTeam(result.items));
-      }
     } catch (e) {
       if (mounted) setState(() => _error = _messageFor(e));
     } finally {
@@ -196,17 +190,22 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
   Future<void> _showUserActions(TeamMember target) async {
     final scope = AppScope.of(context);
     final me = scope.session.user!;
-    if (target.role == Role.owner || target.id == me.id) return;
 
+    // Role-change/deactivate are still fully gated (owner row, or acting on
+    // yourself, or an admin trying to touch another admin, all no-op), but
+    // "View activity" is available on every row — it's read-only oversight,
+    // not an account-management action.
+    final canManage = target.role != Role.owner && target.id != me.id;
     final actorIsOwner = me.role == Role.owner;
-    final canAct = actorIsOwner || target.role != Role.admin;
-    if (!canAct) return;
+    final canAct = canManage && (actorIsOwner || target.role != Role.admin);
 
-    final assignable = [
-      Role.member,
-      Role.analyst,
-      if (actorIsOwner) Role.admin,
-    ].where((r) => r != target.role).toList();
+    final assignable = canAct
+        ? [
+            Role.member,
+            Role.analyst,
+            if (actorIsOwner) Role.admin,
+          ].where((r) => r != target.role).toList()
+        : <Role>[];
 
     final action = await showModalBottomSheet<Object>(
       context: context,
@@ -214,29 +213,38 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text("View activity"),
+              onTap: () => Navigator.pop(context, "view_activity"),
+            ),
             for (final r in assignable)
               ListTile(
                 leading: const Icon(Icons.swap_horiz),
                 title: Text("Make ${r.label}"),
                 onTap: () => Navigator.pop(context, r),
               ),
-            ListTile(
-              leading: Icon(
-                Icons.person_off_outlined,
-                color: Theme.of(context).colorScheme.error,
+            if (canAct)
+              ListTile(
+                leading: Icon(
+                  Icons.person_off_outlined,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  "Deactivate",
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () => Navigator.pop(context, "deactivate"),
               ),
-              title: Text(
-                "Deactivate",
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              onTap: () => Navigator.pop(context, "deactivate"),
-            ),
           ],
         ),
       ),
     );
 
-    if (action is Role) {
+    if (action == "view_activity") {
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => UserActivityScreen(member: target)));
+    } else if (action is Role) {
       await runBusy(target.id, () async {
         try {
           await scope.users.changeRole(target.id, action);
@@ -270,13 +278,17 @@ class _UsersTabState extends State<_UsersTab> with BusyGuard<_UsersTab> {
 
   @override
   Widget build(BuildContext context) {
-    // crossAxisAlignment.stretch: without it, this Column's default center
-    // alignment gives the Expanded body a LOOSE width constraint, so a
-    // naturally-narrow child deep inside (the table's Card, which shrinks
-    // to its own content width) ends up centered in the page instead of
-    // left-aligned under the search bar above it — stretch makes every
-    // direct child (including the body) get the Column's full width, tight,
-    // removing that ambiguity.
+    return OnlineGate(featureName: "The team list", child: _buildOnline(context));
+  }
+
+  // crossAxisAlignment.stretch: without it, this Column's default center
+  // alignment gives the Expanded body a LOOSE width constraint, so a
+  // naturally-narrow child deep inside (the table's Card, which shrinks
+  // to its own content width) ends up centered in the page instead of
+  // left-aligned under the search bar above it — stretch makes every
+  // direct child (including the body) get the Column's full width, tight,
+  // removing that ambiguity.
+  Widget _buildOnline(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

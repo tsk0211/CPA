@@ -5,7 +5,7 @@ export async function logActivity(
   req: AuthedRequest,
   params: {
     action: AuditAction;
-    entityType: "project" | "purchase" | "user";
+    entityType: "project" | "purchase" | "user" | "role";
     entityId: string;
     before?: unknown;
     after?: unknown;

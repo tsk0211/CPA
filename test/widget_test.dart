@@ -20,7 +20,10 @@ void main() {
 
     const connectivityChannel = MethodChannel('dev.fluttercommunity.plus/connectivity');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(connectivityChannel, (call) async {
-      if (call.method == 'check') return 'wifi';
+      // connectivity_plus 6.x's checkConnectivity() calls invokeListMethod,
+      // which expects a List result, not the single-string wire format
+      // older versions used.
+      if (call.method == 'check') return <String>['wifi'];
       return null;
     });
     const connectivityEventChannel = MethodChannel('dev.fluttercommunity.plus/connectivity_status');

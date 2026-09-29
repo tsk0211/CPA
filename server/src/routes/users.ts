@@ -3,6 +3,7 @@ import { Router } from "express";
 import { logActivity } from "../audit.js";
 import { securityConfig } from "../config/index.js";
 import { requireAuth, requireRole, type AuthedRequest } from "../middleware/auth.js";
+import { Role as RoleDoc } from "../models/Role.js";
 import { User, type Role } from "../models/User.js";
 import { parsePageParams, searchFilter, toPagedResult } from "../pagination.js";
 import { revokeAllRefreshTokensForUser } from "../tokens.js";
@@ -26,8 +27,9 @@ usersRouter.get("/", async (req, res) => {
   res.json(toPagedResult(users, total, pageParams));
 });
 
-// Owner can create admin/analyst/member. Admin can only create analyst/member.
-// Nobody can create another owner through the API.
+// Owner can create admin accounts or assign any existing (custom) role.
+// Admin can only assign an existing non-admin role. Nobody can create
+// another owner through the API.
 usersRouter.post("/", async (req: AuthedRequest, res) => {
   const { name, email, tempPassword, role } = req.body as {
     name?: string;
@@ -40,11 +42,11 @@ usersRouter.post("/", async (req: AuthedRequest, res) => {
       .status(400)
       .json({ error: `name, email, and a tempPassword of at least ${securityConfig.minPasswordLength} characters are required` });
   }
-  if (role !== "admin" && role !== "analyst" && role !== "member") {
-    return res.status(400).json({ error: "role must be 'admin', 'analyst', or 'member'" });
-  }
-  if (role === "admin" && req.user!.role !== "owner") {
-    return res.status(403).json({ error: "only the owner can create admin accounts" });
+  if (role === "admin") {
+    if (req.user!.role !== "owner") return res.status(403).json({ error: "only the owner can create admin accounts" });
+  } else {
+    const roleExists = role ? await RoleDoc.exists({ _id: role, deletedAt: null }) : null;
+    if (!roleExists) return res.status(400).json({ error: "role must be 'admin' or an existing role id" });
   }
 
   const existing = await User.findOne({ email: email.toLowerCase().trim() });
@@ -72,8 +74,11 @@ usersRouter.post("/", async (req: AuthedRequest, res) => {
 
 usersRouter.patch("/:id/role", async (req: AuthedRequest, res) => {
   const { role } = req.body as { role?: Role };
-  if (role !== "admin" && role !== "analyst" && role !== "member") {
-    return res.status(400).json({ error: "role must be 'admin', 'analyst', or 'member'" });
+  if (role === "admin") {
+    if (req.user!.role !== "owner") return res.status(403).json({ error: "only the owner can promote someone to admin" });
+  } else {
+    const roleExists = role ? await RoleDoc.exists({ _id: role, deletedAt: null }) : null;
+    if (!roleExists) return res.status(400).json({ error: "role must be 'admin' or an existing role id" });
   }
 
   const target = await User.findOne({ _id: req.params.id, deletedAt: null });
@@ -81,14 +86,14 @@ usersRouter.patch("/:id/role", async (req: AuthedRequest, res) => {
   if (target.role === "owner") return res.status(403).json({ error: "the owner's role cannot be changed" });
 
   const actorIsOwner = req.user!.role === "owner";
-  if (!actorIsOwner) {
-    // Admin can only manage analyst/member accounts, and only into analyst/member.
-    if (target.role === "admin") return res.status(403).json({ error: "only the owner can change an admin's role" });
-    if (role === "admin") return res.status(403).json({ error: "only the owner can promote someone to admin" });
+  if (!actorIsOwner && target.role === "admin") {
+    // Admin can manage any non-admin account into any existing non-admin
+    // role, but can't touch another admin's role at all.
+    return res.status(403).json({ error: "only the owner can change an admin's role" });
   }
 
   const before = { role: target.role };
-  target.role = role;
+  target.role = role!;
   await target.save();
 
   await logActivity(req, {
@@ -111,7 +116,11 @@ usersRouter.delete("/:id", async (req: AuthedRequest, res) => {
   if (!actorIsOwner && target.role === "admin") {
     return res.status(403).json({ error: "only the owner can deactivate an admin" });
   }
-  if (target._id === req.user!.id) {
+  // target._id is a live Mongoose ObjectId here, not the plain string the
+  // JWT carries — strict equality against req.user!.id would silently
+  // never match (pre-existing bug found while touching this route: the
+  // "can't deactivate yourself" guard never actually fired).
+  if (String(target._id) === req.user!.id) {
     return res.status(403).json({ error: "cannot deactivate your own account" });
   }
 

@@ -19,6 +19,33 @@ Deploys to Render's free web service tier — $0, no card required, cold-starts 
 | Deactivate admin accounts | x | | | |
 | Deactivate member/analyst accounts | x | x | | |
 
+Owner and Admin above are fixed — hardcoded, not editable or creatable through the API, the
+permanent ceiling. Analyst and Member are no longer hardcoded alongside them: they're just the two
+default rows the `Role` collection (`models/Role.ts`, `routes/roles.ts`) seeds on first boot, kept
+at those exact ids (`"member"`/`"analyst"`) so no existing `User.role` data needed migrating.
+
+### Custom roles
+
+An Owner can define additional roles (`POST /roles`, Owner-only) beyond Analyst/Member — e.g. a
+"Project Manager" role — as a name plus a set of permission flags
+(`manageProjects`/`addPurchases`/`editPurchases`/`reviewPurchases`/`export`/`seeActivityLog`) and a
+`rank`. Two things are structurally guaranteed, not just convention:
+
+- **A custom role can never reach `manageUsers` or `manageRoles`** — those aren't fields that exist
+  on a role's permission set at all, so there's no request body that could smuggle them in. Only
+  the `owner`/`admin` literals ever have them.
+- **`rank` is clamped server-side to always stay below Admin's**, on every create and edit — a
+  custom role can be positioned anywhere below Admin, never at or above it.
+
+Admin can assign existing roles when creating/managing users (`POST /users`, `PATCH
+/users/:id/role`) but cannot create, edit, or delete a role — only list them. Deleting a role
+still assigned to a user is a 409 (reassign them first, same "nothing silently orphaned" rule as
+everywhere else in this app).
+
+This is phase 1 of a larger redesign (see project memory / planning history) — project-scoped role
+assignments (a role that only applies within specific projects, for e.g. a per-project Project
+Manager) and the associated two-stage PM→Admin purchase review pipeline aren't built yet.
+
 ## Purchase review workflow
 
 A purchase logged by a Member starts **pending**, not counted anywhere yet. An Owner or Admin
