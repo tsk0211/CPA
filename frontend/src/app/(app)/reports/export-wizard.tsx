@@ -46,7 +46,7 @@ interface ExportWizardProps {
 export function ExportWizard({ open, onOpenChange, projects, initialFormat, initialRange, initialProjectIds, initialIncludeAuditTrail }: ExportWizardProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         {/* Keyed on open so every field resets to a clean run each time the
             wizard is reopened (lazy-initialized from the current props),
             instead of syncing that via an effect. */}
@@ -158,7 +158,12 @@ function ExportWizardBody({
           </div>
         )}
 
-        <div className="min-h-[220px]">
+        {/* Fixed height, not min-height — with fixedWeeks on Calendar (see
+            components/ui/calendar.tsx) nothing inside ever needs more than
+            this, so the dialog's own footprint never shifts switching
+            steps or navigating months. overflow-y-auto is a safety net,
+            not the expected path. */}
+        <div className="flex h-[360px] flex-col justify-center overflow-y-auto">
           {done ? (
             <div className="animate-fade-in-up flex flex-col items-center gap-3 py-6 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15">

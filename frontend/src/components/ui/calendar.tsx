@@ -21,6 +21,7 @@ function Calendar({
   locale,
   formatters,
   components,
+  fixedWeeks = true,
   ...props
 }: React.ComponentProps<typeof DayPicker> & {
   buttonVariant?: React.ComponentProps<typeof Button>["variant"]
@@ -30,6 +31,13 @@ function Calendar({
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      // Every month otherwise renders 4-6 week rows depending on how the
+      // days fall, so the calendar's own height (and anything sized around
+      // it, like a dialog) jumps every time you navigate months. Always
+      // padding to 6 rows keeps it constant — this is the actual fix for
+      // "the wizard resizes when I change months," not a wizard-specific
+      // patch, since every Calendar usage in the app gets it for free.
+      fixedWeeks={fixedWeeks}
       className={cn(
         "group/calendar bg-background p-2 [--cell-radius:var(--radius-md)] [--cell-size:--spacing(7)] in-data-[slot=card-content]:bg-transparent in-data-[slot=popover-content]:bg-transparent",
         String.raw`rtl:**:[.rdp-button\_next>svg]:rotate-180`,
