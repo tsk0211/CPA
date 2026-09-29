@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { checkHealth } from "@/lib/api/client";
 import { useSession } from "@/lib/session";
+import { assetPath } from "@/lib/asset-path";
 import { ApiException, NetworkUnavailableException } from "@/lib/api/client";
 
 type ServerStatus = "idle" | "waking" | "live";
@@ -70,7 +70,8 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center text-center gap-3">
-          <Image src="/logo.png" alt="" width={72} height={72} priority />
+          {/* eslint-disable-next-line @next/next/no-img-element -- next/image's basePath prefixing doesn't apply reliably here; see lib/asset-path.ts */}
+          <img src={assetPath("/logo.png")} alt="" width={72} height={72} />
           <div>
             <h1 className="text-3xl font-bold tracking-tight">CPA</h1>
             <p className="text-muted-foreground text-sm">Cash Purchase Accounting</p>
